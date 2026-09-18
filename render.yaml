@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: hebrew-subs
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node src/boot.js
+    healthCheckPath: /health
+    envVars:
+      # Used to seal each person's API key into their install link.
+      # Render generates this once; do not change it later or every issued
+      # link stops working.
+      - key: SECRET
+        generateValue: true
+
+      # PRIVATE MODE: paste your own Gemini key here and the install URL
+      # carries nothing. Leave it empty for a PUBLIC deployment where each
+      # person configures their own key at /configure.
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: CONCURRENCY
+        value: "1"
+      - key: CHUNK_SIZE
+        value: "80"
+      - key: MIN_SPLIT
+        value: "2"
+      - key: RATE_LIMIT_PER_DAY
+        value: "40"

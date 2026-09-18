@@ -1,0 +1,14 @@
+{
+  "name": "stremio-hebrew-subs",
+  "version": "1.0.0",
+  "description": "Stremio addon that translates English subtitles to Hebrew with an LLM, preserving the original timing",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "translate": "node src/cli.js",
+    "test": "node test/run.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT",
+  "private": true
+}
