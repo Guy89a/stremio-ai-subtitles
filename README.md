@@ -1,199 +1,224 @@
-# כתוביות עברית לסטרמיו
+# AI Subtitles for Stremio
 
-> Stremio addon that translates English subtitles into Hebrew with a language model,
-> reading the dialogue as continuous prose and returning it on the original timings.
-> Free to run. Each person uses their own Gemini API key.
-
-תוסף לסטרמיו שמתרגם כתוביות אנגלית לעברית — **ולא שורה-שורה**.
-
-שורות כתובית נחתכות לפי תזמון מסך ולא לפי משפטים, ולכן משפט אחד נפרס לעיתים קרובות על
-שלוש שורות, ושורה בודדת בפני עצמה יכולה להיות חסרת פשר. התוסף שולח למודל מקטע שלם של
-דיאלוג ברצף, עם השורות שלפניו ואחריו כהקשר, ורק אז מפזר את העברית בחזרה על אותן שורות —
-לפי סדר המילים בעברית.
-
-**התזמונים לא זזים.** יש בדיקה מפורשת לפני כתיבת הקובץ; אם תזמון כלשהו זז, התהליך נכשל
-במקום להגיש כתוביות לא מסונכרנות.
+> Translates English subtitles into 54 languages with a language model — reading the
+> dialogue as one continuous passage rather than line by line, and returning it on the
+> original timings. Free to run. Everyone uses their own Gemini API key.
 
 ---
 
-## התקנה
+Subtitle lines are cut by screen timing, not by sentence. One sentence is often split
+across three lines. A single line on its own often means nothing. This is why line-by-line
+machine translation is so hard to follow.
+
+This addon works differently. It sends the model a long stretch of dialogue at once. The
+lines before and after it are included as context, but are not translated. The model reads
+the whole passage first. Only then does it spread the translation back across the same
+numbered lines, in the target language's word order.
+
+**Timings never move.** The file is checked before it is written. If any line has moved,
+the process stops. You never get subtitles that are out of sync.
+
+---
+
+## Install
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Guy89a/stremio-hebrew-subs)
 
-לוחצים על הכפתור וממלאים שני שדות: **Blueprint Name** — שדה חובה שמגיע ריק, כל שם עובד — ו־`GEMINI_API_KEY`,
-מפתח חינמי מ־[Google AI Studio](https://aistudio.google.com/apikey).
-זהו. שאר ההגדרות נקבעות לבד, כולל `SECRET` שנוצר אוטומטית.
+Press the button. You need to fill in two fields:
 
-כשהפריסה מסתיימת, כתובת ההתקנה לסטרמיו היא כתובת השירות שקיבלתם, עם הסיומת:
+- **Blueprint Name** — this field is empty and required. Any name works.
+- `GEMINI_API_KEY` — a free key from [Google AI Studio](https://aistudio.google.com/apikey).
+
+Everything else is set for you, including a `SECRET` that is created automatically.
+
+When the deploy finishes, your install address is your service address plus the language
+you want:
 
 ```
-https://<השירות-שלכם>.onrender.com/manifest.json
+https://<your-service>.onrender.com/heb/manifest.json     Hebrew
+https://<your-service>.onrender.com/spa/manifest.json     Spanish
+https://<your-service>.onrender.com/jpn/manifest.json     Japanese
 ```
 
-בסטרמיו: **Addons** ← להדביק את הכתובת המלאה בשדה החיפוש ← **Install**.
-פותחים פרק, ממתינים כדקה בפעם הראשונה, ובוחרים **Hebrew** בתפריט הכתוביות.
+In Stremio: **Addons** → paste the full address into the search box → **Install**.
+Open an episode. Wait about a minute the first time. Then pick the language in the subtitle
+menu.
 
-> באנדרואיד אין כפתור "Add addon" — מדביקים את הכתובת בשדה החיפוש עצמו והתוסף מופיע.
-> התקנה באפליקציית הדסקטופ עם אותו חשבון מסתנכרנת לטלפון ולטלוויזיה.
+> On Android there is no "Add addon" button — paste the address into the search field
+> itself and the addon appears. Installing in the desktop app with the same account syncs
+> it to your phone and TV.
 
-**נתקעתם?** [`GUIDE.html`](GUIDE.html) מפורט יותר, כולל תקלות נפוצות והרצה מקומית.
-כדי לקרוא אותו: לוחצים עליו כאן, ואז על **Download raw file**.
+**Stuck?** [`GUIDE.html`](GUIDE.html) is a step-by-step guide. It covers common problems
+and how to run the addon on your own computer. It is written in Hebrew.
 
 ---
 
-## מה הוא עושה מעבר לתרגום
+## Languages
 
-| | |
-|---|---|
-| **הקשר** | מקטעים של 80 שורות, עם 12 שורות שכנות מכל צד כהקשר-קריאה-בלבד |
-| **כיווניות** | כל שורה עברית נעטפת בסימוני RTL מפורשים, כדי שנקודה בסוף משפט לא תקפוץ להתחלה |
-| **זכר ונקבה** | הנחיה ייעודית להכריע מי הנמען ולשמור עקביות, ואופציונלית מסלול בשפה שמסמנת מגדר כראיה |
-| **שמות דוברים** | מזהה אוטומטית מסלול SDH ומחלץ ממנו מי מדבר בכל שורה — ומשם מי הנמען |
-| **ניקוי** | תיאורי סאונד ("חריקת דלת", "צפירה") נמחקים, ושורות שהיו רק תיאור נעלמות מהקובץ |
-| **עמידות** | ניסיונות חוזרים עם המתנה מתגברת, מעבר אוטומטי למודל גיבוי, וחציית מקטעים שנחסמו |
-| **שפה זרה** | כשקיים מסלול ייחוס, שורות שהאנגלית דילגה עליהן מוכנסות בחזרה ומתורגמות ממנו |
-
----
-
-## כמה זה עולה וכמה זה לוקח
-
-**כסף: אפס.** השכבה החינמית של Render והשכבה החינמית של Gemini API.
-
-**זמן: בדרך כלל כדקה לפרק ראשון.** מדידה אמיתית: פרק של 709 שורות, 8 מקטעים, **51 שניות**.
-התרגום מתחיל ברקע כשפותחים את הפרק ולא כשלוחצים Play, כך שרוב ההמתנה נבלעת.
-אחרי הפעם הראשונה הקובץ במטמון ונטען מיידית לכל מי שבבית.
-
-זה יכול להתארך לכמה דקות כשגוגל מטילה מגבלת קצב (429) או כשהמודל עמוס (503) —
-התוסף ממתין ומנסה שוב לבד, והלוג מראה בדיוק מה קורה.
-
-שתי ההגדרות שמשפיעות על הזמן: שמות דוברים מ-SDH מוסיפים בערך **8%** ועובדים לבד,
-ו-`REFERENCE_LANG` מוסיף בערך **שליש**. מומלץ להתחיל בלי ייחוס, ולהוסיף רק אם
-הזכר/נקבה עדיין מטריד.
-
-בשכבה החינמית של Render השירות נרדם אחרי 15 דקות. אפשר להשאירו ער בקריאה תקופתית
-ל-`/health` משירות cron חינמי — אבל **לא 24/7**: המכסה היא 750 שעות בחודש וחודש ארוך
-הוא 744, כך שחריגה משביתה את השירות עד תחילת החודש הבא.
-`*/10 0-3,6-23 * * *` נותן 22 שעות ביום עם חיץ נוח.
-
----
-
-## הגדרות
-
-משתני סביבה, כולם אופציונליים חוץ מהמפתח.
-
-| שדה | ברירת מחדל | מה זה עושה |
-|---|---|---|
-| `GEMINI_API_KEY` | — | המפתח שלכם. ריק = מצב ציבורי, שבו כל אחד מגדיר מפתח משלו בדף הראשי |
-| `SECRET` | נוצר אוטומטית | מצפין מפתח של משתמש לתוך כתובת ההתקנה שלו. **אל תשנו אחרי פריסה** |
-| `GEMINI_MODEL` | `gemini-flash-lite-latest` | אפשר רשימה מופרדת בפסיקים; הראשון שעונה מנצח |
-| `GEMINI_FALLBACK` | — | מודל גיבוי נוסף כשהראשון עמוס |
-| `CHUNK_SIZE` | `80` | שורות לבקשה. גדול = הקשר טוב יותר, אבל סיכוי גבוה יותר להיחסם |
-| `CONCURRENCY` | `1` | בקשות במקביל. **לא להעלות** — זה מה ששורף את המכסה לדקה |
-| `MIN_SPLIT` | `2` | עד כמה להמשיך לחצות מקטע חסום. נמוך = פחות אנגלית, איטי יותר |
-| `TARGET_LANG` | `heb` | שפת היעד. כל שפה מהטבלה, למשל `spa`, `fre`, `jpn` |
-| `REFERENCE_LANG` | — | שפת ייחוס שמסמנת מגדר, למשל `spa` |
-| `FILL_FOREIGN_GAPS` | `1` | להכניס שורות שהאנגלית דילגה עליהן. דורש `REFERENCE_LANG` |
-| `KEEP_SOUND_CUES` | — | `1` כדי להשאיר תיאורי סאונד במקום למחוק אותם |
-| `RATE_LIMIT_PER_DAY` | `40` | תקרת פרקים חדשים ליום לכל פונה |
-| `RATE_LIMIT_TOTAL` | `200` | תקרה יומית לכל השירות ביחד |
-| `MAX_JOBS` | `3` | תרגומים שרצים במקביל |
-| `MAX_SUBTITLE_BYTES` | `2000000` | גודל מרבי לקובץ מקור |
-
----
-
-## שפות
-
-התוסף מתרגם ל-**54 שפות**, לא רק לעברית. שפת ברירת המחדל נקבעת ב-`TARGET_LANG`,
-אבל אין צורך לפרוס מחדש כדי לקבל שפה אחרת — מכניסים את קוד השפה לכתובת ההתקנה:
-
-```
-https://<השירות-שלכם>.onrender.com/spa/manifest.json     ← ספרדית
-https://<השירות-שלכם>.onrender.com/jpn/manifest.json     ← יפנית
-```
-
-אפשר להתקין כמה מהן זו לצד זו; כל אחת מופיעה בסטרמיו כתוסף נפרד עם השפה שלה.
+You can install as many languages as you like at the same time. Each one appears in Stremio
+as its own addon. `TARGET_LANG` sets the default for your server, but you do not need to
+deploy again to use another language. Just put its code in the address.
 
 <details>
-<summary><b>כל 54 הקודים</b> — לחצו לפתיחה</summary>
+<summary><b>All 54 codes</b> — click to expand</summary>
 
-| קוד | שפה | English |
+| Code | Language | Native |
 |---|---|---|
-| `heb` | עברית | Hebrew |
-| `ara` | العربية | Arabic |
-| `fas` | فارسی | Persian |
-| `urd` | اردو | Urdu |
-| `spa` | Español | Spanish |
-| `por` | Português | Portuguese |
-| `fre` | Français | French |
-| `ita` | Italiano | Italian |
-| `ger` | Deutsch | German |
-| `dut` | Nederlands | Dutch |
-| `pol` | Polski | Polish |
-| `cze` | Čeština | Czech |
-| `slo` | Slovenčina | Slovak |
-| `slv` | Slovenščina | Slovenian |
-| `hrv` | Hrvatski | Croatian |
-| `srp` | Српски | Serbian |
-| `bul` | Български | Bulgarian |
-| `rus` | Русский | Russian |
-| `ukr` | Українська | Ukrainian |
-| `rum` | Română | Romanian |
-| `hun` | Magyar | Hungarian |
-| `gre` | Ελληνικά | Greek |
-| `tur` | Türkçe | Turkish |
-| `swe` | Svenska | Swedish |
-| `nor` | Norsk | Norwegian |
-| `dan` | Dansk | Danish |
-| `fin` | Suomi | Finnish |
-| `ice` | Íslenska | Icelandic |
-| `est` | Eesti | Estonian |
-| `lav` | Latviešu | Latvian |
-| `lit` | Lietuvių | Lithuanian |
-| `chi` | 简体中文 | Chinese (Simplified) |
-| `jpn` | 日本語 | Japanese |
-| `kor` | 한국어 | Korean |
-| `tha` | ไทย | Thai |
-| `vie` | Tiếng Việt | Vietnamese |
-| `ind` | Bahasa Indonesia | Indonesian |
-| `may` | Bahasa Melayu | Malay |
+| `heb` | Hebrew | עברית |
+| `ara` | Arabic | العربية |
+| `fas` | Persian | فارسی |
+| `urd` | Urdu | اردو |
+| `spa` | Spanish | Español |
+| `por` | Portuguese | Português |
+| `fre` | French | Français |
+| `ita` | Italian | Italiano |
+| `ger` | German | Deutsch |
+| `dut` | Dutch | Nederlands |
+| `pol` | Polish | Polski |
+| `cze` | Czech | Čeština |
+| `slo` | Slovak | Slovenčina |
+| `slv` | Slovenian | Slovenščina |
+| `hrv` | Croatian | Hrvatski |
+| `srp` | Serbian | Српски |
+| `bul` | Bulgarian | Български |
+| `rus` | Russian | Русский |
+| `ukr` | Ukrainian | Українська |
+| `rum` | Romanian | Română |
+| `hun` | Hungarian | Magyar |
+| `gre` | Greek | Ελληνικά |
+| `tur` | Turkish | Türkçe |
+| `swe` | Swedish | Svenska |
+| `nor` | Norwegian | Norsk |
+| `dan` | Danish | Dansk |
+| `fin` | Finnish | Suomi |
+| `ice` | Icelandic | Íslenska |
+| `est` | Estonian | Eesti |
+| `lav` | Latvian | Latviešu |
+| `lit` | Lithuanian | Lietuvių |
+| `chi` | Chinese (Simplified) | 简体中文 |
+| `jpn` | Japanese | 日本語 |
+| `kor` | Korean | 한국어 |
+| `tha` | Thai | ไทย |
+| `vie` | Vietnamese | Tiếng Việt |
+| `ind` | Indonesian | Bahasa Indonesia |
+| `may` | Malay | Bahasa Melayu |
 | `tgl` | Filipino | Filipino |
-| `hin` | हिन्दी | Hindi |
-| `ben` | বাংলা | Bengali |
-| `tam` | தமிழ் | Tamil |
-| `tel` | తెలుగు | Telugu |
-| `mal` | മലയാളം | Malayalam |
-| `swa` | Kiswahili | Swahili |
-| `alb` | Shqip | Albanian |
-| `mac` | Македонски | Macedonian |
-| `geo` | ქართული | Georgian |
-| `arm` | Հայերեն | Armenian |
-| `aze` | Azərbaycan | Azerbaijani |
-| `kaz` | Қазақша | Kazakh |
-| `cat` | Català | Catalan |
-| `glg` | Galego | Galician |
-| `baq` | Euskara | Basque |
+| `hin` | Hindi | हिन्दी |
+| `ben` | Bengali | বাংলা |
+| `tam` | Tamil | தமிழ் |
+| `tel` | Telugu | తెలుగు |
+| `mal` | Malayalam | മലയാളം |
+| `swa` | Swahili | Kiswahili |
+| `alb` | Albanian | Shqip |
+| `mac` | Macedonian | Македонски |
+| `geo` | Georgian | ქართული |
+| `arm` | Armenian | Հայերեն |
+| `aze` | Azerbaijani | Azərbaycan |
+| `kaz` | Kazakh | Қазақша |
+| `cat` | Catalan | Català |
+| `glg` | Galician | Galego |
+| `baq` | Basque | Euskara |
 
 </details>
 
-ההנחיות שנשלחות למודל אינן כתובות פר-שפה אלא נגזרות מארבע תכונות: באיזה אלפבית לכתוב,
-כיוון הכתיבה, האם השפה מסמנת מגדר בפנייה, והאם יש בה הבחנה בין פנייה רשמית למוכרת.
-שפה חדשה היא שורה בטבלה ב-`src/languages.js`, לא קוד חדש. קוד שאינו בטבלה עדיין עובד,
-עם ברירות מחדל ניטרליות.
+The instructions sent to the model are not written by hand for each language. They are
+built from four facts about it:
+
+- which script to write in
+- which direction it reads
+- whether you must choose a gender when you address someone
+- whether it has both a familiar and a polite "you"
+
+So adding a language is one row in `src/languages.js`. It is not new code. A code that is
+not in the table still works, with neutral settings.
+
+For many languages the table also holds the actual forms, because showing them works better
+than describing them: `אתה / את / אתם / אתן` for Hebrew, `tu / vous` for French,
+`du / Sie` for German, `сказал / сказала` for Russian. These go straight into the prompt.
+
+**One thing to be clear about.** The model is good at common languages. The rarer the
+language, the weaker it gets, and the mistakes can be hard to spot if you do not read it.
+The addon will return a valid file in any language. The quality is not something this
+project can promise. If you are the first person to try a language here, watch one episode
+before you recommend it to anyone.
 
 ---
 
-## הרצה מקומית
+## What it does beyond translating
 
-לא חייבים ענן. בווינדוס: לחיצה כפולה על `INSTALL.bat` ואז על `START.bat`.
-המחיר: המחשב צריך להישאר דלוק בזמן הצפייה.
+| | |
+|---|---|
+| **Context** | Chunks of 80 lines, with 12 neighbouring lines on each side as read-only context |
+| **Direction** | Lines in a right-to-left language are wrapped in explicit RTL marks, so a full stop cannot jump to the start of the sentence |
+| **Gender** | Dedicated guidance to decide who is being addressed and stay consistent, plus an optional evidence track in a language that marks it |
+| **Speakers** | Detects an SDH track automatically and extracts who says each line — and from that, who is being addressed |
+| **Cleanup** | Sound descriptions ("door creaks", "siren") are removed, and cues that were only a description disappear from the file |
+| **Resilience** | Retries with growing backoff, automatic fallback to a second model, and bisection of chunks the content filter blocks |
+| **Foreign dialogue** | With a reference track, lines the English skipped entirely are folded back in and translated from it |
 
-בכל מערכת אחרת:
+---
+
+## Cost and time
+
+**Money: none.** Render's free tier and Gemini's free tier.
+
+**Time: about a minute for a first episode.** Measured on a real one: 709 lines, 8 chunks,
+51 seconds. Translation starts when you open the episode, not when you press Play, so you
+wait less than that. After the first time the file is saved and loads at once for everyone
+in the house.
+
+It can take a few minutes if Google limits the rate (error 429) or the model is busy (503).
+The addon waits and tries again by itself. The log shows what is happening.
+
+Two settings change the time. Speaker names from an SDH track add about **8%**, and they
+work on their own. `REFERENCE_LANG` adds about **a third**. Start without a reference track.
+Add one only if gender is still wrong too often.
+
+On Render's free plan the service sleeps after 15 minutes. You can keep it awake by calling
+`/health` every few minutes from a free cron service. But **do not do this 24 hours a day**.
+The free plan gives 750 hours a month, and a long month is 744 hours. If you go over, the
+service stops until the next month. `*/10 0-3,6-23 * * *` gives 22 hours a day, with room
+to spare.
+
+---
+
+## Configuration
+
+Environment variables. All optional except the key.
+
+| Field | Default | What it does |
+|---|---|---|
+| `GEMINI_API_KEY` | — | Your key. Empty means public mode, where each visitor configures their own on the front page |
+| `SECRET` | generated | Encrypts a user's key into their personal install address. **Do not change after deploying** |
+| `TARGET_LANG` | `heb` | Default target language. Any code from the table |
+| `GEMINI_MODEL` | `gemini-flash-lite-latest` | Comma-separated list allowed; the first that answers wins |
+| `GEMINI_FALLBACK` | — | An extra model to fall back to when the first is overloaded |
+| `CHUNK_SIZE` | `80` | Lines per request. Larger gives better context, but is blocked more often |
+| `CONCURRENCY` | `1` | Requests at the same time. **Do not raise it.** This is what uses up the per-minute quota |
+| `MIN_SPLIT` | `2` | How far to keep splitting a blocked chunk. Lower leaves less English, but is slower |
+| `REFERENCE_LANG` | — | A second track in a language that marks gender, used as evidence |
+| `FILL_FOREIGN_GAPS` | `1` | Fold in lines the English track skipped. Requires `REFERENCE_LANG` |
+| `KEEP_SOUND_CUES` | — | `1` to keep sound descriptions instead of removing them |
+| `MAX_SOURCES` | `2` | English sources translated per episode. `1` halves quota use |
+| `RATE_LIMIT_PER_DAY` | `40` | New episodes per day per caller |
+| `RATE_LIMIT_TOTAL` | `200` | Daily ceiling for the whole service |
+| `MAX_JOBS` | `3` | Translations running at once |
+| `MAX_SUBTITLE_BYTES` | `2000000` | Largest source file accepted |
+
+---
+
+## Running it locally
+
+You do not need the cloud. On Windows: double-click `INSTALL.bat`, then `START.bat`.
+The trade-off is that the computer has to stay on while you watch.
+
+On any other system:
 
 ```bash
 GEMINI_API_KEY=... node src/boot.js
 ```
 
-והמרת קובץ SRT בודד, בלי סטרמיו:
+And to convert a single SRT file without Stremio at all:
 
 ```bash
 GEMINI_API_KEY=... node src/cli.js episode.en.srt
@@ -201,34 +226,41 @@ GEMINI_API_KEY=... node src/cli.js episode.en.srt
 
 ---
 
-## בדיקות
+## Tests
 
 ```bash
 npm test
 ```
 
-שש חבילות שרצות בלי רשת ובלי לצרוך מכסה: פרסור ותזמונים, מסלול הענן והצפנת המפתח,
-כיווניות וסינון סקריפט זר, יישור מסלול ייחוס וזיהוי דוברים, אבטחה — כל בדיקה שם מתאימה
-לפרצה אמיתית שנסגרה ב-1.5.0 — ושפות: טבלת השפות, כיווניות, הפרדת מטמון וחתימה לפי שפה.
+Six test suites. They run without the network and without using any quota:
+
+- parsing and timings
+- the cloud path and key encryption
+- text direction and foreign-script filtering
+- reference-track alignment and speaker detection
+- security — each check matches a real hole that was closed, so it cannot come back unnoticed
+- languages — the table, direction, and keeping each language's cache and signature apart
 
 ---
 
-## פרטיות
+## Privacy and security
 
-המפתח שלכם יושב במשתני הסביבה של השירות שלכם ולא מופיע בשום כתובת. הוא לא נכתב ללוג
-ולא לדיסק.
+Your key stays in your own server's environment variables. It appears in no address. It is
+never written to the log or to disk.
 
-כל קישור כתובית שהשרת מנפיק חתום, כך שאי אפשר להחליף בו את כתובת המקור ולהפעיל תרגום
-על חשבון המכסה שלכם. כתובות פרטיות ופנימיות חסומות, יש תקרה יומית לכל פונה ותקרה נוספת
-לשירות כולו, ודף הזנת המפתח פעיל רק בפריסה ציבורית שבאמת זקוקה לו.
+Every subtitle link the server creates is signed. Nobody can change the source address
+inside it to make the server download something else and translate it with your quota.
+Private and internal addresses are refused. Downloads have a size limit, and so do
+compressed files. There is a daily limit for each caller, and a second limit for the whole
+service. The page that asks for a key is only served by a public server that needs it.
 
-במצב הציבורי, שבו כל משתמש מביא מפתח משלו, המפתח מוצפן בתוך כתובת ההתקנה האישית.
-מי שמשיג את הכתובת לא יכול לחלץ ממנה את המפתח, אבל כן יכול להשתמש בה — ולכן יש
-להתייחס אליה כמו לסיסמה.
+In public mode each user brings their own key. That key is encrypted inside their personal
+install address. Someone who gets the address cannot read the key out of it, but they can
+use it. So treat that address like a password.
 
-מקור כתוביות האנגלית הוא תוסף OpenSubtitles הציבורי, אותו אחד שסטרמיו מגיעה איתו.
-התוסף הזה לא מחזיק ולא מפיץ כתוביות משלו.
+The English subtitles come from the public OpenSubtitles addon, the same one Stremio comes
+with. This addon does not host or share any subtitles of its own.
 
 ---
 
-AGPL-3.0-or-later — ראו `LICENSE`
+AGPL-3.0-or-later — see [`LICENSE`](LICENSE)
