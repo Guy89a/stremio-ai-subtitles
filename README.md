@@ -136,4 +136,4 @@ npm test
 
 ---
 
-MIT
+AGPL-3.0-or-later — ראו `LICENSE`
