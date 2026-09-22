@@ -1,8 +1,11 @@
 # AI Subtitles for Stremio
 
-> Translates English subtitles into 54 languages with a language model — reading the
-> dialogue as one continuous passage rather than line by line, and returning it on the
+> Translates English subtitles into **54 languages** with a language model. It reads the
+> dialogue as one continuous passage instead of line by line, and returns it on the
 > original timings. Free to run. Everyone uses their own Gemini API key.
+
+One server gives you every language. You pick one by putting its three-letter code in the
+install address, so you can add a language at any time without deploying again.
 
 ---
 
@@ -31,13 +34,19 @@ Press the button. You need to fill in two fields:
 
 Everything else is set for you, including a `SECRET` that is created automatically.
 
-When the deploy finishes, your install address is your service address plus the language
-you want:
+When the deploy finishes, your install address looks like this:
 
 ```
-https://<your-service>.onrender.com/heb/manifest.json     Hebrew
-https://<your-service>.onrender.com/spa/manifest.json     Spanish
-https://<your-service>.onrender.com/jpn/manifest.json     Japanese
+https://<your-service>.onrender.com/<language-code>/manifest.json
+```
+
+**Those three letters in the middle are the language.** Change them and you get the same
+addon in another language:
+
+```
+.../heb/manifest.json     Hebrew
+.../spa/manifest.json     Spanish
+.../jpn/manifest.json     Japanese
 ```
 
 In Stremio: **Addons** → paste the full address into the search box → **Install**.
@@ -48,8 +57,8 @@ menu.
 > itself and the addon appears. Installing in the desktop app with the same account syncs
 > it to your phone and TV.
 
-**Stuck?** [`GUIDE.html`](GUIDE.html) is a step-by-step guide. It covers common problems
-and how to run the addon on your own computer. It is written in Hebrew.
+**Stuck?** [`GUIDE.md`](GUIDE.md) is a step-by-step guide. It covers common problems and
+how to run the addon on your own computer.
 
 ---
 
@@ -59,64 +68,68 @@ You can install as many languages as you like at the same time. Each one appears
 as its own addon. `TARGET_LANG` sets the default for your server, but you do not need to
 deploy again to use another language. Just put its code in the address.
 
-<details>
-<summary><b>All 54 codes</b> — click to expand</summary>
-
 | Code | Language | Native |
 |---|---|---|
 | `heb` | Hebrew | עברית |
-| `ara` | Arabic | العربية |
-| `fas` | Persian | فارسی |
-| `urd` | Urdu | اردو |
+| `chi` | Chinese (Simplified) | 简体中文 |
+| `hin` | Hindi | हिन्दी |
 | `spa` | Spanish | Español |
-| `por` | Portuguese | Português |
+| `ara` | Arabic | العربية |
+| **⋯** | **49 more languages** | **⋯** |
+
+<details>
+<summary><b>Show all 54</b></summary>
+
+| Code | Language | Native |
+|---|---|---|
 | `fre` | French | Français |
-| `ita` | Italian | Italiano |
+| `ben` | Bengali | বাংলা |
+| `por` | Portuguese | Português |
+| `rus` | Russian | Русский |
+| `urd` | Urdu | اردو |
+| `ind` | Indonesian | Bahasa Indonesia |
+| `jpn` | Japanese | 日本語 |
 | `ger` | German | Deutsch |
-| `dut` | Dutch | Nederlands |
+| `swa` | Swahili | Kiswahili |
+| `tel` | Telugu | తెలుగు |
+| `tur` | Turkish | Türkçe |
+| `tam` | Tamil | தமிழ் |
+| `vie` | Vietnamese | Tiếng Việt |
+| `kor` | Korean | 한국어 |
+| `tgl` | Filipino | Filipino |
+| `fas` | Persian | فارسی |
+| `may` | Malay | Bahasa Melayu |
+| `ita` | Italian | Italiano |
+| `tha` | Thai | ไทย |
 | `pol` | Polish | Polski |
+| `ukr` | Ukrainian | Українська |
+| `mal` | Malayalam | മലയാളം |
+| `dut` | Dutch | Nederlands |
+| `rum` | Romanian | Română |
+| `gre` | Greek | Ελληνικά |
+| `hun` | Hungarian | Magyar |
 | `cze` | Czech | Čeština |
-| `slo` | Slovak | Slovenčina |
-| `slv` | Slovenian | Slovenščina |
-| `hrv` | Croatian | Hrvatski |
+| `swe` | Swedish | Svenska |
 | `srp` | Serbian | Српски |
 | `bul` | Bulgarian | Български |
-| `rus` | Russian | Русский |
-| `ukr` | Ukrainian | Українська |
-| `rum` | Romanian | Română |
-| `hun` | Hungarian | Magyar |
-| `gre` | Greek | Ελληνικά |
-| `tur` | Turkish | Türkçe |
-| `swe` | Swedish | Svenska |
-| `nor` | Norwegian | Norsk |
+| `hrv` | Croatian | Hrvatski |
 | `dan` | Danish | Dansk |
 | `fin` | Finnish | Suomi |
-| `ice` | Icelandic | Íslenska |
-| `est` | Estonian | Eesti |
-| `lav` | Latvian | Latviešu |
-| `lit` | Lithuanian | Lietuvių |
-| `chi` | Chinese (Simplified) | 简体中文 |
-| `jpn` | Japanese | 日本語 |
-| `kor` | Korean | 한국어 |
-| `tha` | Thai | ไทย |
-| `vie` | Vietnamese | Tiếng Việt |
-| `ind` | Indonesian | Bahasa Indonesia |
-| `may` | Malay | Bahasa Melayu |
-| `tgl` | Filipino | Filipino |
-| `hin` | Hindi | हिन्दी |
-| `ben` | Bengali | বাংলা |
-| `tam` | Tamil | தமிழ் |
-| `tel` | Telugu | తెలుగు |
-| `mal` | Malayalam | മലയാളം |
-| `swa` | Swahili | Kiswahili |
+| `nor` | Norwegian | Norsk |
+| `slo` | Slovak | Slovenčina |
+| `aze` | Azerbaijani | Azərbaycan |
+| `kaz` | Kazakh | Қазақша |
 | `alb` | Albanian | Shqip |
+| `slv` | Slovenian | Slovenščina |
+| `lit` | Lithuanian | Lietuvių |
+| `lav` | Latvian | Latviešu |
 | `mac` | Macedonian | Македонски |
 | `geo` | Georgian | ქართული |
 | `arm` | Armenian | Հայերեն |
-| `aze` | Azerbaijani | Azərbaycan |
-| `kaz` | Kazakh | Қазақша |
 | `cat` | Catalan | Català |
+| `est` | Estonian | Eesti |
 | `glg` | Galician | Galego |
+| `ice` | Icelandic | Íslenska |
 | `baq` | Basque | Euskara |
 
 </details>
