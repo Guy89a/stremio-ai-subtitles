@@ -261,7 +261,7 @@ copy.onclick=function(){
 function manifest(configured) {
   return {
     id: 'community.hebrew.ai.subtitles',
-    version: '1.5.0',
+    version: '1.5.1',
     name: 'כתוביות עברית (AI)',
     description:
       'מתרגם כתוביות אנגלית לעברית עם מודל שפה — קורא את הדיאלוג כרצף שלם ומחזיר אותו לשורות בתזמון המקורי.',
@@ -400,12 +400,16 @@ async function handleSubtitles(req, res, { type, id, extra, apiKey, token }) {
     // sealed blob, and on a local one the key already lives in the env.
     const carry = token ? `&c=${encodeURIComponent(token)}` : '';
     subtitles.push({
-      id: `he-ai-${key}`,
+      // Same language code for every candidate. A distinct code such as
+      // "heb-2" makes the player list a second, separate Hebrew entry;
+      // sharing "heb" keeps them together under one Hebrew heading, the way
+      // an upstream addon offering several English tracks behaves.
+      id: `he-ai-${i + 1}-${key}`,
       url:
         `${base}/sub/${key}.srt?src=${encodeURIComponent(s.url)}` +
         (refUrl ? `&ref=${encodeURIComponent(refUrl)}` : '') +
         `&s=${sign(s.url, refUrl)}${carry}`,
-      lang: i === 0 ? 'heb' : `heb-${i + 1}`,
+      lang: 'heb',
     });
   }
 
