@@ -93,7 +93,7 @@ async function main() {
   // non-verbal detection
   assert.ok(srt.isNonVerbal('♪'), '♪ is non-verbal');
   assert.ok(srt.isNonVerbal('- -'), 'dashes are non-verbal');
-  assert.ok(!srt.isNonVerbal('[door creaks]'), 'sound cues do get translated');
+  assert.ok(!srt.isNonVerbal('[door creaks]'), 'a sound description is text, just not dialogue');
   console.log('✓ non-verbal cues detected');
 
   // wrapping
@@ -105,7 +105,7 @@ async function main() {
   // ---- 2. translation pipeline (stubbed model) -----------------------------
   const realFetch = global.fetch;
   global.fetch = fakeGeminiFetch;
-  process.env.CHUNK_SIZE = '3'; // force multiple chunks over the 7 verbal cues
+  process.env.CHUNK_SIZE = '3'; // force multiple chunks over the spoken cues
   const { translateCues } = require('../src/translate');
 
   const out = await translateCues(cues, 'test-key', () => {});
@@ -118,17 +118,21 @@ async function main() {
   }
   console.log('✓ every timing is carried through untouched');
 
-  assert.deepStrictEqual(out[2].lines, ['♪'], 'music cue passed through unchanged');
-  console.log('✓ music cue left alone');
+  assert.deepStrictEqual(out[2].lines, ['♪'], 'music cue text is not translated');
+  assert.strictEqual(out[2].drop, true, 'a music-only cue is marked for removal');
+  assert.strictEqual(out[6].drop, true, 'a sound-description cue is marked for removal');
+  console.log('✓ music and sound-effect cues are marked for removal');
 
-  const verbalIdx = [0, 1, 3, 4, 5, 6, 7];
+  const verbalIdx = [0, 1, 3, 4, 5, 7];   // 2 is music, 6 is a sound description
   for (const i of verbalIdx) {
     assert.ok(/[֐-׿]/.test(out[i].lines.join(' ')), `cue ${i + 1} not in Hebrew`);
   }
-  console.log('✓ all 7 spoken cues came back in Hebrew, none dropped or merged');
+  console.log('✓ all 6 spoken cues came back in Hebrew, none dropped or merged');
 
   const text = srt.serialize(out);
-  assert.strictEqual(srt.parse(text).length, 8, 'output file re-parses to 8 cues');
+  assert.strictEqual(srt.parse(text).length, 6, 'the two sound-only cues are gone from the file');
+  assert.ok(!/door creaks/i.test(text), 'no sound description reaches the viewer');
+  assert.ok(!text.includes('♪'), 'no bare music cue reaches the viewer');
   assert.ok(/^1\n00:00:01,000 --> 00:00:03,200\n/.test(text), 'renumbered from 1');
   console.log('✓ output is valid, renumbered SRT');
 
@@ -179,11 +183,12 @@ async function main() {
   const srtBody = await srtRes.text();
   assert.ok(srtRes.ok, `.srt endpoint returned ${srtRes.status}`);
   const served = srt.parse(srtBody);
-  assert.strictEqual(served.length, 8, 'served file has all 8 cues');
+  assert.strictEqual(served.length, 6, 'served file drops the two sound-only cues');
+  const kept = cues.filter((_, i) => ![2, 6].includes(i));
   assert.deepStrictEqual(
     served.map((c) => [c.start, c.end]),
-    cues.map((c) => [c.start, c.end]),
-    'served timings match the English source exactly'
+    kept.map((c) => [c.start, c.end]),
+    'every surviving cue keeps the timing of its English source'
   );
   assert.ok(/[֐-׿]/.test(srtBody), 'served file contains Hebrew');
   console.log('✓ served .srt matches the English timings cue for cue');

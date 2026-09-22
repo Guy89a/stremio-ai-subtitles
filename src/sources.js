@@ -38,10 +38,8 @@ async function fetchJson(url, ms = 15000) {
   }
 }
 
-/**
- * Ask every configured upstream addon for subtitles and return the English ones.
- */
-async function findEnglishSubtitles(type, id, extra) {
+/** Ask every configured upstream addon once and return everything they offer. */
+async function fetchAll(type, id, extra) {
   const suffix = extra ? `/${extra}` : '';
   const lists = await Promise.all(
     UPSTREAMS.map((base) =>
@@ -54,13 +52,28 @@ async function findEnglishSubtitles(type, id, extra) {
   for (const list of lists) {
     for (const s of list?.subtitles || []) {
       const url = s.url || s.SubDownloadLink;
-      if (!url || !isEnglish(s.lang || s.SubLanguageID)) continue;
-      if (seen.has(url)) continue;
+      if (!url || seen.has(url)) continue;
       seen.add(url);
-      out.push({ id: String(s.id || seen.size), url });
+      out.push({
+        id: String(s.id || seen.size),
+        url,
+        lang: String(s.lang || s.SubLanguageID || '').toLowerCase().trim(),
+      });
     }
   }
   return out;
+}
+
+/** Keep only the entries whose language matches any of `codes`. */
+function pickLang(all, codes) {
+  const want = codes.map((c) => c.toLowerCase());
+  return (all || []).filter((s) =>
+    want.some((c) => s.lang === c || s.lang.startsWith(c + '-') || s.lang.startsWith(c))
+  );
+}
+
+async function findEnglishSubtitles(type, id, extra) {
+  return (await fetchAll(type, id, extra)).filter((s) => isEnglish(s.lang));
 }
 
 function decode(buf) {
@@ -101,4 +114,4 @@ async function downloadSubtitle(url, ms = 30000) {
   }
 }
 
-module.exports = { findEnglishSubtitles, downloadSubtitle, UPSTREAMS };
+module.exports = { findEnglishSubtitles, fetchAll, pickLang, downloadSubtitle, UPSTREAMS };
