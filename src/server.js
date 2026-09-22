@@ -10,6 +10,7 @@ const srt = require('./srt');
 const secret = require('./secret');
 const { translateCues, MODEL } = require('./translate');
 const { fetchAll, pickLang, downloadSubtitle, UPSTREAMS } = require('./sources');
+const langs = require('./languages');
 
 const PORT = parseInt(process.env.PORT || '7788', 10);
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, '..', 'cache');
@@ -22,12 +23,10 @@ const REF_LANG = (process.env.REFERENCE_LANG || '').toLowerCase().trim();
 // Fold in dialogue the English track skipped entirely (characters speaking
 // another language). Only possible when a reference track is configured.
 const FILL_GAPS = process.env.FILL_FOREIGN_GAPS !== '0';
-const REF_ALIASES = {
-  spa: ['spa', 'es', 'spanish'], por: ['por', 'pt', 'portuguese'],
-  fre: ['fre', 'fra', 'fr', 'french'], ita: ['ita', 'it', 'italian'],
-  rus: ['rus', 'ru', 'russian'], ger: ['ger', 'deu', 'de', 'german'],
-  pol: ['pol', 'pl', 'polish'],
-};
+// The language this deployment translates into by default. A public
+// deployment lets each person choose their own instead.
+const TARGET = langs.normalize(process.env.TARGET_LANG || langs.DEFAULT_CODE);
+const KNOWN_LANG = new Set(langs.list().map((l) => l.code));
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 
@@ -51,11 +50,16 @@ const SIGN_KEY =
     ? crypto.createHash('sha256').update('url-signing|' + process.env.SECRET).digest()
     : crypto.randomBytes(32); // no SECRET: links last as long as this process
 
-const sign = (src, ref) =>
-  crypto.createHmac('sha256', SIGN_KEY).update(`${src}|${ref || ''}`).digest('base64url').slice(0, 22);
+// The target language is part of the identity of a translation: the same
+// English source produces a different file for every language, so it belongs
+// in both the cache name and the signature.
+const idOf = (src, ref, lang) => `${src}|${ref || ''}|${lang}`;
 
-function signOk(src, ref, sig) {
-  const want = Buffer.from(sign(src, ref));
+const sign = (src, ref, lang) =>
+  crypto.createHmac('sha256', SIGN_KEY).update(idOf(src, ref, lang)).digest('base64url').slice(0, 22);
+
+function signOk(src, ref, lang, sig) {
+  const want = Buffer.from(sign(src, ref, lang));
   const got = Buffer.from(String(sig || ''));
   return want.length === got.length && crypto.timingSafeEqual(want, got);
 }
@@ -94,7 +98,7 @@ async function findSpeakers(cues, altUrls, log) {
   return undefined;
 }
 
-async function buildHebrew(key, sourceUrl, apiKey, refUrl, altUrls) {
+async function buildTranslation(key, sourceUrl, apiKey, refUrl, altUrls, lang) {
   const cached = readCache(key);
   if (cached) return cached;
   if (jobs.has(key)) return jobs.get(key);
@@ -139,7 +143,7 @@ async function buildHebrew(key, sourceUrl, apiKey, refUrl, altUrls) {
     }
 
     const translated = await translateCues(
-      work, apiKey, (m) => log(`[${key}] ${m}`), refs, speakers
+      work, apiKey, (m) => log(`[${key}] ${m}`), refs, speakers, lang
     );
 
     // Every cue keeps the timing it arrived with — English or reference.
@@ -166,9 +170,9 @@ async function buildHebrew(key, sourceUrl, apiKey, refUrl, altUrls) {
 
 function configurePage(base) {
   return `<!doctype html>
-<html lang="he" dir="rtl"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>הגדרת כתוביות עברית</title>
+<title>AI Subtitles — setup</title>
 <style>
 :root{--bg:#fbfaf8;--fg:#23201d;--muted:#6b645d;--line:#e5e0d8;--accent:#7c4a2d;--card:#fff;--code:#f3efe9;--warn:#fdf6e7;--warnline:#e0c98a}
 @media(prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#1b1917;--fg:#ece7e1;--muted:#a49c93;--line:#35302b;--accent:#d99a6e;--card:#232020;--code:#2a2523;--warn:#2e2717;--warnline:#6b5a2e}}
@@ -179,7 +183,8 @@ h1{font-size:1.8rem;margin:0 0 .25em}
 .sub{color:var(--muted);margin:0 0 2em}
 h2{font-size:1.1rem;margin:2em 0 .5em}
 label{display:block;font-weight:600;margin:0 0 .4em}
-input{width:100%;padding:12px 14px;font-size:1rem;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);direction:ltr;text-align:left}
+input,select{width:100%;padding:12px 14px;font-size:1rem;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+select{margin-bottom:.5em}
 input:focus{outline:2px solid var(--accent);outline-offset:1px}
 button{margin-top:14px;padding:12px 22px;font-size:1rem;font-weight:600;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
 button:disabled{opacity:.55;cursor:default}
@@ -194,77 +199,92 @@ a{color:var(--accent)}
 .muted{color:var(--muted);font-size:.93rem}
 </style></head><body><div class="wrap">
 
-<h1>כתוביות עברית לסטרמיו</h1>
-<p class="sub">תרגום כתוביות אנגלית לעברית, עם התזמון המקורי. כל אחד משתמש במפתח שלו.</p>
+<h1>AI Subtitles for Stremio</h1>
+<p class="sub">Translates English subtitles into your language, on the original timings. Everyone uses their own free API key.</p>
 
-<h2>1. מפתח Gemini</h2>
-<p>צרו מפתח חינמי ב־<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> והדביקו אותו כאן.</p>
-<label for="k">מפתח ה־API שלכם</label>
-<input id="k" type="password" autocomplete="off" spellcheck="false" placeholder="AQ... או AIza...">
-<button id="go">צור לי כתובת התקנה</button>
+<h2>1. Your language</h2>
+<label for="lang">Translate subtitles into</label>
+<select id="lang">${langs.list()
+  .map((l) => `<option value="${l.code}"${l.code === TARGET ? ' selected' : ''}>${escapeHtml(l.native)} — ${escapeHtml(l.name)}</option>`)
+  .join('')}</select>
+
+<h2>2. Gemini key</h2>
+<p>Create a free key at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> and paste it here. It is encrypted into your install link and never shown again.</p>
+<label for="k">Your API key</label>
+<input id="k" type="password" autocomplete="off" spellcheck="false" placeholder="AQ... or AIza...">
+<button id="go">Create my install link</button>
 <div id="err" class="err"></div>
 
 <div id="result" class="hide">
-  <h2>2. הכתובת שלכם</h2>
+  <h2>3. Your install link</h2>
   <div class="out" id="url"></div>
-  <button id="copy">העתק</button>
+  <button id="copy">Copy</button>
   <div class="card">
-    <strong>איך מתקינים</strong>
+    <strong>How to install</strong>
     <ol>
-      <li>פתחו את <strong>Stremio</strong> ← <strong>Addons</strong></li>
-      <li>הדביקו את הכתובת בשדה החיפוש למעלה</li>
-      <li>לחצו <strong>Install</strong></li>
+      <li>Open <strong>Stremio</strong> → <strong>Addons</strong></li>
+      <li>Paste the link into the search box at the top</li>
+      <li>Press <strong>Install</strong></li>
     </ol>
-    <p class="muted">פתחו פרק, חכו דקות ספורות בפעם הראשונה, ובחרו <strong>Hebrew</strong> בתפריט הכתוביות.</p>
+    <p class="muted">Open an episode, wait about a minute the first time, and pick your language in the subtitle menu.</p>
   </div>
   <div class="warn">
-    <strong>שמרו על הכתובת הזו כמו על סיסמה.</strong>
-    המפתח בתוכה מוצפן ואי אפשר לחלץ אותו ממנה, אבל מי שמחזיק בכתובת יכול לתרגם על חשבון המכסה שלכם.
-    אם היא דלפה — מחקו את המפתח ב־AI Studio וצרו כתובת חדשה כאן.
+    <strong>Treat this link like a password.</strong>
+    Your key is encrypted inside it and cannot be read out of it, but anyone holding the link
+    can translate against your quota. If it leaks, delete the key in AI Studio and make a new link here.
   </div>
 </div>
 
-<h2>רוצים בידוד מלא?</h2>
+<h2>Want full isolation?</h2>
 <p>
-השרת הזה מפענח את המפתח שלכם בזמן הבקשה כדי לפנות לגוגל — כלומר אתם סומכים על מי שמפעיל אותו.
-מי שמעדיף שהמפתח לא יעבור דרך אף שרת של אף אחד יכול לפרוס עותק משלו בחינם תוך שתי דקות,
-ואז המפתח יושב בהגדרות השרת שלו ולא מופיע בשום כתובת.
+This server decrypts your key at request time in order to call Google, which means you are
+trusting whoever runs it. Anyone who would rather their key never passed through someone
+else's server can deploy their own copy free in about two minutes; the key then lives in
+that server's own settings and appears in no link at all.
 </p>
 
 <script>
 var k=document.getElementById('k'),go=document.getElementById('go'),err=document.getElementById('err'),
-    res=document.getElementById('result'),out=document.getElementById('url'),copy=document.getElementById('copy');
+    res=document.getElementById('result'),out=document.getElementById('url'),copy=document.getElementById('copy'),
+    langSel=document.getElementById('lang');
 go.onclick=function(){
   var key=k.value.trim(); err.textContent='';
-  if(key.length<20){err.textContent='המפתח נראה קצר מדי.';return;}
-  go.disabled=true; go.textContent='בודק מול גוגל...';
-  fetch('/api/url',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key:key})})
+  if(key.length<20){err.textContent='That key looks too short.';return;}
+  go.disabled=true; go.textContent='Checking with Google...';
+  fetch('/api/url',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key:key,lang:langSel.value})})
    .then(function(r){return r.json()})
    .then(function(d){
-     go.disabled=false; go.textContent='צור לי כתובת התקנה';
+     go.disabled=false; go.textContent='Create my install link';
      if(d.error){err.textContent=d.error;return;}
      out.textContent=d.url; res.className=''; k.value='';
      res.scrollIntoView({behavior:'smooth',block:'start'});
    })
-   .catch(function(){go.disabled=false;go.textContent='צור לי כתובת התקנה';err.textContent='משהו השתבש. נסו שוב.';});
+   .catch(function(){go.disabled=false;go.textContent='Create my install link';err.textContent='Something went wrong. Try again.';});
 };
 k.addEventListener('keydown',function(e){if(e.key==='Enter')go.click();});
 copy.onclick=function(){
   navigator.clipboard.writeText(out.textContent).then(function(){
-    copy.textContent='הועתק'; setTimeout(function(){copy.textContent='העתק'},1600);
+    copy.textContent='Copied'; setTimeout(function(){copy.textContent='Copy'},1600);
   });
 };
 </script>
 </div></body></html>`;
 }
 
-function manifest(configured) {
+function manifest(configured, lang) {
+  const L = langs.get(lang || TARGET);
   return {
-    id: 'community.hebrew.ai.subtitles',
-    version: '1.5.1',
-    name: 'כתוביות עברית (AI)',
+    // One id per language, so a viewer can install several side by side and
+    // the player does not treat them as the same addon. Hebrew is the
+    // exception: it keeps the id it was published under, so the people who
+    // already had this installed are not asked to install it again.
+    id: L.code === 'heb' ? 'community.hebrew.ai.subtitles' : `community.ai.subtitles.${L.code}`,
+    version: '2.0.0',
+    name: `${L.native} (AI)`,
     description:
-      'מתרגם כתוביות אנגלית לעברית עם מודל שפה — קורא את הדיאלוג כרצף שלם ומחזיר אותו לשורות בתזמון המקורי.',
+      `Translates English subtitles into ${L.name} with a language model. ` +
+      'It reads the dialogue as one continuous passage rather than line by line, ' +
+      'and returns it on the original timings.',
     logo: 'https://dl.strem.io/addon-logo.png',
     resources: ['subtitles'],
     types: ['series', 'movie'],
@@ -373,43 +393,43 @@ function withinRate(id, episodeKey) {
   return true;
 }
 
-async function handleSubtitles(req, res, { type, id, extra, apiKey, token }) {
+async function handleSubtitles(req, res, { type, id, extra, apiKey, token, lang }) {
   if (!apiKey) return sendJson(res, { subtitles: [] }, 'no-store');
 
   const all = await fetchAll(type, id, extra);
   const english = pickLang(all, ['eng', 'en']);
   const sources = english.slice(0, MAX_SOURCES);
   const refUrl = REF_LANG
-    ? (pickLang(all, REF_ALIASES[REF_LANG] || [REF_LANG])[0] || {}).url
+    ? (pickLang(all, langs.aliasesOf(REF_LANG))[0] || {}).url
     : undefined;
-  log(`subtitles ${type}/${id} → ${sources.length} english source(s)${refUrl ? `, ${REF_LANG} reference found` : ''}`);
+  log(`subtitles ${type}/${id} → ${lang} → ${sources.length} english source(s)${refUrl ? `, ${REF_LANG} reference found` : ''}`);
   if (!sources.length) return sendJson(res, { subtitles: [] }, 'no-store');
 
   const base = publicBase(req);
   const who = callerId(req, token);
   const subtitles = [];
   for (const [i, s] of sources.entries()) {
-    const key = cacheKey(s.url + '|' + (refUrl || ''));
+    const key = cacheKey(idOf(s.url, refUrl, lang));
     if (!readCache(key) && !withinRate(who, key)) {
       log(`rate limit reached for ${who} - skipping`);
       break;
     }
     // Warm the cache now so the file is usually ready the moment it is picked.
-    buildHebrew(key, s.url, apiKey, refUrl, english.filter((o) => o.url !== s.url).map((o) => o.url)).catch(() => {});
+    buildTranslation(key, s.url, apiKey, refUrl, english.filter((o) => o.url !== s.url).map((o) => o.url), lang).catch(() => {});
     // The key itself never travels here: on a public server `token` is the
     // sealed blob, and on a local one the key already lives in the env.
     const carry = token ? `&c=${encodeURIComponent(token)}` : '';
     subtitles.push({
       // Same language code for every candidate. A distinct code such as
-      // "heb-2" makes the player list a second, separate Hebrew entry;
-      // sharing "heb" keeps them together under one Hebrew heading, the way
-      // an upstream addon offering several English tracks behaves.
-      id: `he-ai-${i + 1}-${key}`,
+      // "heb-2" makes the player list a second, separate entry for the same
+      // language; sharing one code keeps them together under one heading, the
+      // way an upstream addon offering several English tracks behaves.
+      id: `ai-${i + 1}-${key}`,
       url:
         `${base}/sub/${key}.srt?src=${encodeURIComponent(s.url)}` +
         (refUrl ? `&ref=${encodeURIComponent(refUrl)}` : '') +
-        `&s=${sign(s.url, refUrl)}${carry}`,
-      lang: 'heb',
+        `&l=${encodeURIComponent(lang)}&s=${sign(s.url, refUrl, lang)}${carry}`,
+      lang,
     });
   }
 
@@ -423,6 +443,7 @@ async function handleSrt(req, res, url) {
   const carried = url.searchParams.get('c');
   const cfg = carried ? decodeConfig(carried) : null;
   const apiKey = (cfg && cfg.key) || ENV_KEY;
+  const lang = langs.normalize(url.searchParams.get('l') || (cfg && cfg.lang) || TARGET);
 
   const headers = {
     'content-type': 'application/x-subrip; charset=utf-8',
@@ -439,8 +460,8 @@ async function handleSrt(req, res, url) {
   //    be swapped for an address of the caller's choosing;
   //  - the name must be the one this source hashes to, so nothing can be
   //    stored under a name that belongs to a different episode.
-  if (!signOk(src, ref, url.searchParams.get('s'))) return send(res, 404, 'not found');
-  if (key !== cacheKey(`${src}|${ref || ''}`)) return send(res, 404, 'not found');
+  if (!signOk(src, ref, lang, url.searchParams.get('s'))) return send(res, 404, 'not found');
+  if (key !== cacheKey(idOf(src, ref, lang))) return send(res, 404, 'not found');
 
   const who = callerId(req, carried || null);
   if (!withinRate(who, key)) {
@@ -448,7 +469,7 @@ async function handleSrt(req, res, url) {
   }
 
   try {
-    const body = await buildHebrew(key, src, apiKey, ref);
+    const body = await buildTranslation(key, src, apiKey, ref, undefined, lang);
     send(res, 200, body, headers);
   } catch (e) {
     // The detail goes to the log, not to the caller: distinct messages told an
@@ -464,15 +485,25 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const parts = url.pathname.split('/').filter(Boolean);
 
-  // optional leading config segment
+  // A leading path segment is either a sealed configuration - someone's own
+  // API key and chosen language - or a plain language code, which carries no
+  // secret and is therefore safe to accept on any deployment. Installing
+  // /spa/manifest.json alongside /heb/manifest.json gives two languages from
+  // one server.
   const RESERVED = ['manifest.json', 'subtitles', 'sub', 'health', 'configure', 'api', ''];
   let apiKey = ENV_KEY;
   let token = null;
+  let lang = TARGET;
   if (parts.length && !RESERVED.includes(parts[0].toLowerCase())) {
-    const cfg = decodeConfig(parts[0]);
+    const seg = parts[0];
+    const cfg = decodeConfig(seg);
     if (cfg && cfg.key) {
       apiKey = cfg.key;
-      token = parts[0];
+      if (cfg.lang) lang = langs.normalize(cfg.lang);
+      token = seg;
+      parts.shift();
+    } else if (KNOWN_LANG.has(langs.normalize(seg))) {
+      lang = langs.normalize(seg);
       parts.shift();
     } else {
       // An unreadable first segment is not a route prefix. Consuming it anyway
@@ -493,20 +524,25 @@ const server = http.createServer(async (req, res) => {
       return send(
         res,
         200,
-        `<!doctype html><meta charset="utf-8"><title>כתוביות עברית (AI)</title>
-<body style="font-family:system-ui;max-width:620px;margin:3rem auto;padding:0 1rem;direction:rtl">
-<h1>כתוביות עברית (AI)</h1>
-<p>השרת פעיל. כדי להתקין בסטרמיו, הדביקו את הכתובת הזו בשורת החיפוש של Addons:</p>
-<p><code style="background:#eee;padding:.5rem;display:block;direction:ltr">${escapeHtml(base)}/manifest.json</code></p>
-<p>מנוע תרגום: <b>${escapeHtml(MODEL)}</b> · מקורות אנגלית: ${UPSTREAMS.length} · מפתח API: ${
-          ENV_KEY ? 'מוגדר ✅' : 'חסר ❌'
-        }</p></body>`,
+        `<!doctype html><meta charset="utf-8"><title>AI Subtitles</title>
+<body style="font-family:system-ui;max-width:640px;margin:3rem auto;padding:0 1rem;line-height:1.6">
+<h1>AI Subtitles for Stremio</h1>
+<p>The server is running. To install in Stremio, paste this address into the Addons search box:</p>
+<p><code style="background:#eee;padding:.5rem;display:block">${escapeHtml(base)}/${langs.get(TARGET).code}/manifest.json</code></p>
+<p>Default language: <b>${escapeHtml(langs.get(TARGET).native)}</b> (${escapeHtml(langs.get(TARGET).name)}).
+For another language, put its code in the path instead — for example
+<code>${escapeHtml(base)}/spa/manifest.json</code> for Spanish. Install several side by side if you like.</p>
+<p style="color:#666">Model: <b>${escapeHtml(MODEL)}</b> · English sources: ${UPSTREAMS.length} · API key: ${
+          ENV_KEY ? 'set' : 'missing'
+        }</p>
+<p style="color:#666">Languages available: ${langs.list().map((l) => escapeHtml(l.code)).join(', ')}</p>
+</body>`,
         { 'content-type': 'text/html; charset=utf-8' }
       );
     }
 
-    if (parts[0] === 'health') return sendJson(res, { ok: true, model: MODEL, key: !!apiKey });
-    if (parts[0] === 'manifest.json') return sendJson(res, manifest(!!token || !!ENV_KEY));
+    if (parts[0] === 'health') return sendJson(res, { ok: true, model: MODEL, key: !!apiKey, lang });
+    if (parts[0] === 'manifest.json') return sendJson(res, manifest(!!token || !!ENV_KEY, lang));
 
     // Awaited, not just returned: an un-awaited rejection here escapes the
     // catch below and, on current Node, takes the whole process down.
@@ -520,7 +556,7 @@ const server = http.createServer(async (req, res) => {
       const id = decodeURIComponent(segs[0] || '');
       const extra = segs.length > 1 ? segs.slice(1).join('/') : '';
       if (!type || !id) return sendJson(res, { subtitles: [] }, 'no-store');
-      return await handleSubtitles(req, res, { type, id, extra, apiKey, token });
+      return await handleSubtitles(req, res, { type, id, extra, apiKey, token, lang });
     }
 
     // Turn a pasted key into a personal install URL. The key is used to build
@@ -536,7 +572,12 @@ const server = http.createServer(async (req, res) => {
         if (body.length > 4096) return sendJson(res, { error: 'too large' }, 'no-store');
       }
       let key = '';
-      try { key = String(JSON.parse(body).key || '').trim(); } catch { /* handled below */ }
+      let wanted = TARGET;
+      try {
+        const parsed = JSON.parse(body);
+        key = String(parsed.key || '').trim();
+        if (parsed.lang) wanted = langs.normalize(parsed.lang);
+      } catch { /* handled below */ }
       if (key.length < 20) return sendJson(res, { error: 'That does not look like an API key.' }, 'no-store');
       if (!secret.enabled()) {
         return sendJson(res, { error: 'This server has no SECRET set, so it cannot issue links.' }, 'no-store');
@@ -553,7 +594,11 @@ const server = http.createServer(async (req, res) => {
       } catch {
         return sendJson(res, { error: 'Could not reach Google to check the key.' }, 'no-store');
       }
-      return sendJson(res, { url: `${publicBase(req)}/${secret.seal({ key })}/manifest.json` }, 'no-store');
+      return sendJson(
+        res,
+        { url: `${publicBase(req)}/${secret.seal({ key, lang: wanted })}/manifest.json` },
+        'no-store'
+      );
     }
 
     if (parts[0] === 'configure') {

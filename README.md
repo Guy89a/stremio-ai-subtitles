@@ -90,13 +90,95 @@ https://<השירות-שלכם>.onrender.com/manifest.json
 | `CHUNK_SIZE` | `80` | שורות לבקשה. גדול = הקשר טוב יותר, אבל סיכוי גבוה יותר להיחסם |
 | `CONCURRENCY` | `1` | בקשות במקביל. **לא להעלות** — זה מה ששורף את המכסה לדקה |
 | `MIN_SPLIT` | `2` | עד כמה להמשיך לחצות מקטע חסום. נמוך = פחות אנגלית, איטי יותר |
-| `REFERENCE_LANG` | — | `spa`, `por`, `fre`, `ita`, `rus`, `ger`, `pol` |
+| `TARGET_LANG` | `heb` | שפת היעד. כל שפה מהטבלה, למשל `spa`, `fre`, `jpn` |
+| `REFERENCE_LANG` | — | שפת ייחוס שמסמנת מגדר, למשל `spa` |
 | `FILL_FOREIGN_GAPS` | `1` | להכניס שורות שהאנגלית דילגה עליהן. דורש `REFERENCE_LANG` |
 | `KEEP_SOUND_CUES` | — | `1` כדי להשאיר תיאורי סאונד במקום למחוק אותם |
 | `RATE_LIMIT_PER_DAY` | `40` | תקרת פרקים חדשים ליום לכל פונה |
 | `RATE_LIMIT_TOTAL` | `200` | תקרה יומית לכל השירות ביחד |
 | `MAX_JOBS` | `3` | תרגומים שרצים במקביל |
 | `MAX_SUBTITLE_BYTES` | `2000000` | גודל מרבי לקובץ מקור |
+
+---
+
+## שפות
+
+התוסף מתרגם ל-**54 שפות**, לא רק לעברית. שפת ברירת המחדל נקבעת ב-`TARGET_LANG`,
+אבל אין צורך לפרוס מחדש כדי לקבל שפה אחרת — מכניסים את קוד השפה לכתובת ההתקנה:
+
+```
+https://<השירות-שלכם>.onrender.com/spa/manifest.json     ← ספרדית
+https://<השירות-שלכם>.onrender.com/jpn/manifest.json     ← יפנית
+```
+
+אפשר להתקין כמה מהן זו לצד זו; כל אחת מופיעה בסטרמיו כתוסף נפרד עם השפה שלה.
+
+<details>
+<summary><b>כל 54 הקודים</b> — לחצו לפתיחה</summary>
+
+| קוד | שפה | English |
+|---|---|---|
+| `heb` | עברית | Hebrew |
+| `ara` | العربية | Arabic |
+| `fas` | فارسی | Persian |
+| `urd` | اردو | Urdu |
+| `spa` | Español | Spanish |
+| `por` | Português | Portuguese |
+| `fre` | Français | French |
+| `ita` | Italiano | Italian |
+| `ger` | Deutsch | German |
+| `dut` | Nederlands | Dutch |
+| `pol` | Polski | Polish |
+| `cze` | Čeština | Czech |
+| `slo` | Slovenčina | Slovak |
+| `slv` | Slovenščina | Slovenian |
+| `hrv` | Hrvatski | Croatian |
+| `srp` | Српски | Serbian |
+| `bul` | Български | Bulgarian |
+| `rus` | Русский | Russian |
+| `ukr` | Українська | Ukrainian |
+| `rum` | Română | Romanian |
+| `hun` | Magyar | Hungarian |
+| `gre` | Ελληνικά | Greek |
+| `tur` | Türkçe | Turkish |
+| `swe` | Svenska | Swedish |
+| `nor` | Norsk | Norwegian |
+| `dan` | Dansk | Danish |
+| `fin` | Suomi | Finnish |
+| `ice` | Íslenska | Icelandic |
+| `est` | Eesti | Estonian |
+| `lav` | Latviešu | Latvian |
+| `lit` | Lietuvių | Lithuanian |
+| `chi` | 简体中文 | Chinese (Simplified) |
+| `jpn` | 日本語 | Japanese |
+| `kor` | 한국어 | Korean |
+| `tha` | ไทย | Thai |
+| `vie` | Tiếng Việt | Vietnamese |
+| `ind` | Bahasa Indonesia | Indonesian |
+| `may` | Bahasa Melayu | Malay |
+| `tgl` | Filipino | Filipino |
+| `hin` | हिन्दी | Hindi |
+| `ben` | বাংলা | Bengali |
+| `tam` | தமிழ் | Tamil |
+| `tel` | తెలుగు | Telugu |
+| `mal` | മലയാളം | Malayalam |
+| `swa` | Kiswahili | Swahili |
+| `alb` | Shqip | Albanian |
+| `mac` | Македонски | Macedonian |
+| `geo` | ქართული | Georgian |
+| `arm` | Հայերեն | Armenian |
+| `aze` | Azərbaycan | Azerbaijani |
+| `kaz` | Қазақша | Kazakh |
+| `cat` | Català | Catalan |
+| `glg` | Galego | Galician |
+| `baq` | Euskara | Basque |
+
+</details>
+
+ההנחיות שנשלחות למודל אינן כתובות פר-שפה אלא נגזרות מארבע תכונות: באיזה אלפבית לכתוב,
+כיוון הכתיבה, האם השפה מסמנת מגדר בפנייה, והאם יש בה הבחנה בין פנייה רשמית למוכרת.
+שפה חדשה היא שורה בטבלה ב-`src/languages.js`, לא קוד חדש. קוד שאינו בטבלה עדיין עובד,
+עם ברירות מחדל ניטרליות.
 
 ---
 
@@ -125,9 +207,9 @@ GEMINI_API_KEY=... node src/cli.js episode.en.srt
 npm test
 ```
 
-חמש חבילות שרצות בלי רשת ובלי לצרוך מכסה: פרסור ותזמונים, מסלול הענן והצפנת המפתח,
-כיווניות וסינון סקריפט זר, יישור מסלול ייחוס וזיהוי דוברים, ואבטחה — כל בדיקה שם מתאימה
-לפרצה אמיתית שנסגרה ב-1.5.0.
+שש חבילות שרצות בלי רשת ובלי לצרוך מכסה: פרסור ותזמונים, מסלול הענן והצפנת המפתח,
+כיווניות וסינון סקריפט זר, יישור מסלול ייחוס וזיהוי דוברים, אבטחה — כל בדיקה שם מתאימה
+לפרצה אמיתית שנסגרה ב-1.5.0 — ושפות: טבלת השפות, כיווניות, הפרדת מטמון וחתימה לפי שפה.
 
 ---
 

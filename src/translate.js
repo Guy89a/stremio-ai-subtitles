@@ -1,6 +1,7 @@
 'use strict';
 
-const { cueToSource, isNonVerbal, wrap, rtl, hasForeignScript, splitSdh } = require('./srt');
+const { cueToSource, isNonVerbal, wrap, markDirection, hasForeignScriptFor, splitSdh } = require('./srt');
+const langs = require('./languages');
 
 // GEMINI_MODEL may be a comma-separated list: the first that answers wins, and
 // the rest act as fallbacks when a model is overloaded (503) or rate-limited.
@@ -20,47 +21,89 @@ const CHUNK = parseInt(process.env.CHUNK_SIZE || '120', 10);
 const CONTEXT = parseInt(process.env.CONTEXT_CUES || '12', 10);
 const CONCURRENCY = parseInt(process.env.CONCURRENCY || '3', 10);
 
-const SYSTEM = `You are a professional subtitle translator working from English into modern, natural Hebrew.
+// The instructions are assembled from what the target language actually
+// requires, not written out per language. Four properties decide it: the
+// script to write in, the direction, whether addressing someone forces a
+// gender choice, and whether there is a familiar/polite distinction.
+function systemPrompt(lang) {
+  const L = lang.name;
+  let p = BASE.replace(/\{LANG\}/g, L);
+  if (lang.gender2p) p += gender2pRules(lang);
+  if (lang.formality) p += formalityRules(lang);
+  p += scriptRules(lang);
+  return p;
+}
+
+function gender2pRules(lang) {
+  return `
+
+SECOND PERSON — ${lang.name} forces a choice English does not:
+- English "you" carries no gender and often no number. ${lang.name} marks them, and the verbs, adjectives and possessives that go with them agree. You MUST decide, every single time.${
+  lang.forms.gender ? `\n- In ${lang.name} that means: ${lang.forms.gender}.` : ''
+}
+- Work it out from the passage: who is speaking to whom, names used, how other characters refer to them, and the CONTEXT lines around the block. A group is addressed differently from one person.
+- Once you have decided a character's gender, keep it identical for the rest of the passage. A character addressed as one gender in one line and the other three lines later is the most jarring mistake you can make.
+- The same applies to first person plural, to "they", and to a narrator addressing the viewer.
+- Only when the passage genuinely gives you nothing, choose the reading that fits the scene best and stay consistent with it - never alternate.`;
+}
+
+function formalityRules(lang) {
+  return `
+
+REGISTER OF ADDRESS — ${lang.name} distinguishes a familiar "you" from a polite one:${
+  lang.forms.formal ? `\n- In ${lang.name}: ${lang.forms.formal}.` : ''
+}
+- English does not mark this at all, so you must infer it: how well the characters know each other, their relative status and age, whether the setting is private or official, and whether they are on first-name terms.
+- Strangers, officials, employers and elders normally take the polite form; family, close friends, children and intimates take the familiar one.
+- A switch between the two is a real dramatic event. Only make it when the scene clearly earns it, and then keep the new form.
+- Keep one character's form toward another consistent for the whole passage.`;
+}
+
+function scriptRules(lang) {
+  return `
+
+SCRIPT — write in ${lang.name}:
+- Every translated word must be written in the ${lang.name} writing system, except proper names and brands that conventionally stay in Latin letters, plus digits and punctuation.
+- NEVER output ${langs.otherScriptNames(lang.code).join(', ')} or any other writing system that is not ${lang.name}'s own. Not a single word, not a single character. If a term feels foreign, write it in ${lang.name} instead.`;
+}
+
+const BASE = `You are a professional subtitle translator working from English into modern, natural {LANG}.
 
 HOW TO WORK — this order matters:
 1. First READ THE WHOLE PASSAGE you are given as one continuous piece of dialogue. Subtitle lines are cut by screen timing, not by sentence, so a single sentence is often split across several numbered lines and a line on its own is frequently meaningless or misleading.
 2. Understand the passage as a whole: who is speaking, what the sentence actually means, idioms, running jokes, pronoun antecedents, callbacks to the CONTEXT lines.
-3. Only THEN produce the Hebrew, and redistribute that Hebrew back across the SAME numbered lines, so that the Hebrew appearing on screen at line N matches what is being said during line N's moment.
+3. Only THEN produce the {LANG}, and redistribute that {LANG} back across the SAME numbered lines, so that the text appearing on screen at line N matches what is being said during line N's moment.
 
 RULES:
 - Output exactly one entry for every numbered line in the TRANSLATE block — same numbers, none added, none skipped, none merged.
-- NEVER translate a line in isolation when it is part of a longer sentence. Translate the sentence, then split the Hebrew across its lines at a natural point, following Hebrew word order — not English word order.
-- Hebrew is shorter than English: prefer tight, spoken phrasing. Keep each line roughly the length of its English source so reading speed matches the picture.
-- Natural spoken Hebrew, not literal word-for-word. Translate idioms to their Hebrew equivalent in meaning and register, never literally.
+- NEVER translate a line in isolation when it is part of a longer sentence. Translate the sentence, then split the result across its lines at a natural point, following {LANG} word order — not English word order.
+- Prefer tight, spoken phrasing. Keep each line close to the reading time of its English source so it matches the picture; a line that takes longer to read than it is on screen is a failure.
+- Natural spoken {LANG}, not literal word-for-word. Translate idioms to their {LANG} equivalent in meaning and register, never literally.
 - Keep the register and tone of each speaker: slang stays slang, formal stays formal, rudeness stays rude.
 - Keep a leading "- " dialogue dash when the source line has one (two speakers in one line keep both dashes).
-- Keep ♪ around song/music lines; keep proper names, brands and numbers as-is unless a Hebrew form is standard.
+- Keep ♪ around song/music lines; keep proper names, brands and numbers as-is unless a {LANG} form is standard.
 - Sound descriptions such as [door creaks] have already been removed before you see the text; do not invent any.
 - Do not add explanations, notes, transliterations or quotation marks that are not in the source.
 - Never output English text except for names/brands that stay in Latin script.
 - If a line has no translatable words (music notes, dashes only), return it unchanged.
-- CONTEXT lines are for understanding only. Do not return them.
-
-SECOND PERSON — Hebrew forces a choice English does not:
-- English "you" carries no gender and no number. Hebrew does: אתה / את / אתם / אתן, and every verb, adjective and possessive agrees with it. You MUST decide, every single time.
-- Work it out from the passage: who is speaking to whom, names used, how other characters refer to them, and the CONTEXT lines around the block. A crowd or a group is אתם, not אתה.
-- Once you have decided a character's gender, keep it identical for the rest of the passage. A character who is את in one line and אתה three lines later is the most jarring mistake you can make.
-- The same applies to first person plural, to "they", and to a narrator addressing the viewer.
-- Only when the passage genuinely gives you nothing, choose the reading that fits the scene best and stay consistent with it - never alternate.
-
-SCRIPT — Hebrew letters only:
-- Every translated word must be in Hebrew script, except proper names and brands that stay in Latin letters, plus digits and punctuation.
-- NEVER output Arabic, Persian, Cyrillic or any other script. Not a single word, not a single character. If a term feels foreign, write it in Hebrew letters instead.`;
+- CONTEXT lines are for understanding only. Do not return them.`;
 
 const STRIP_SOUND = process.env.KEEP_SOUND_CUES !== '1';
 
-// Added only when the source track actually names its speakers.
-const SDH_RULES = `
+// Added only when the source track actually names its speakers. Worth far
+// more in a language that marks the addressee's gender, so the last line is
+// only included when that applies.
+function sdhRules(lang) {
+  return `
 
 SPEAKER NAMES ARE MARKED:
 - A line beginning with <NAME> tells you who says it. This is metadata, NOT part of the dialogue - never translate it and never include it in your answer.
-- Use it to follow the turn-taking. The person being addressed is normally whoever spoke the previous turn, which is what decides אתה vs את.
-- Names are also your best evidence for a character's gender. Once a name tells you, apply it everywhere that character is spoken to or about.`;
+- Use it to follow the turn-taking. The person being addressed is normally whoever spoke the previous turn.${
+  lang.gender2p
+    ? '\n- Names are also your best evidence for a character\'s gender, which this language forces you to mark. Once a name tells you, apply it everywhere that character is spoken to or about.'
+    : ''
+}`;
+}
 
 const REF_LABEL = (process.env.REFERENCE_LANG || 'ref').toUpperCase();
 
@@ -74,7 +117,7 @@ A SECOND TRANSLATION IS PROVIDED:
 - Translate the ENGLISH line. The reference is evidence about meaning, never the text to translate. Where the two disagree on wording, the English wins; where they disagree on who is being addressed, the reference wins.
 - Where the English line is missing or empty but the reference is not, the English track simply did not translate that moment. Translate it from the reference.`;
 
-function buildPrompt(chunk, before, after) {
+function buildPrompt(chunk, before, after, lang) {
   const fmt = (arr) =>
     arr
       .map((c) => {
@@ -85,14 +128,14 @@ function buildPrompt(chunk, before, after) {
       .join('\n');
   let p = '';
   if (before.length) p += `CONTEXT BEFORE (do not translate):\n${fmt(before)}\n\n`;
-  p += `TRANSLATE (return exactly these ${chunk.length} numbered lines, in Hebrew):\n${fmt(chunk)}\n`;
+  p += `TRANSLATE (return exactly these ${chunk.length} numbered lines, in ${lang.name}):\n${fmt(chunk)}\n`;
   if (after.length) p += `\nCONTEXT AFTER (do not translate):\n${fmt(after)}\n`;
   return p;
 }
 
-async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES, log, withRef = false, withSpk = false } = {}) {
+async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES, log, withRef = false, withSpk = false, lang } = {}) {
   const body = {
-    systemInstruction: { parts: [{ text: SYSTEM + (withRef ? REF_RULES : '') + (withSpk ? SDH_RULES : '') }] },
+    systemInstruction: { parts: [{ text: systemPrompt(lang) + (withRef ? REF_RULES : '') + (withSpk ? sdhRules(lang) : '') }] },
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     generationConfig: {
       temperature,
@@ -164,7 +207,7 @@ async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES
   throw lastErr;
 }
 
-async function translateChunk(apiKey, chunk, before, after, log) {
+async function translateChunk(apiKey, chunk, before, after, log, lang) {
   const want = new Set(chunk.map((c) => c.n));
   const out = new Map();
   const withRef = chunk.some((c) => c.ref) || before.some((c) => c.ref) || after.some((c) => c.ref);
@@ -172,7 +215,7 @@ async function translateChunk(apiKey, chunk, before, after, log) {
 
   // Lines that came back with Arabic in them are held aside rather than
   // thrown away: we ask for them again, but if the second try is no better
-  // we still prefer slightly-contaminated Hebrew over an English line.
+  // we still prefer a slightly-contaminated translation over an English line.
   const quarantine = new Map();
 
   const absorb = (arr, strict) => {
@@ -181,26 +224,32 @@ async function translateChunk(apiKey, chunk, before, after, log) {
       const n = Number(item?.n);
       const he = typeof item?.he === 'string' ? item.he.trim() : '';
       if (!want.has(n) || !he || out.has(n)) continue;
-      if (strict && hasForeignScript(he)) { quarantine.set(n, he); continue; }
+      if (strict && hasForeignScriptFor(he, lang.code)) { quarantine.set(n, he); continue; }
       out.set(n, he);
     }
   };
 
-  absorb(await callGemini(apiKey, buildPrompt(chunk, before, after), { log, withRef, withSpk }), true);
+  absorb(await callGemini(apiKey, buildPrompt(chunk, before, after, lang), { log, withRef, withSpk, lang }), true);
 
   // Retry whatever came back missing or in the wrong script, once.
   const missing = chunk.filter((c) => !out.has(c.n));
   if (missing.length) {
     const bad = quarantine.size;
-    log(`  ↻ ${missing.length} lines to redo${bad ? ` (${bad} had non-Hebrew script)` : ''}`);
+    log(`  ↻ ${missing.length} lines to redo${bad ? ` (${bad} had the wrong script)` : ''}`);
+    // Naming the script that came back is worth more than a generic scolding.
+    const strayNames = [...new Set(
+      [...quarantine.values()]
+        .flatMap((t) => langs.scriptsIn(t))
+        .filter((n) => n !== 'Latin' && n !== langs.get(lang.code).name)
+    )];
     const note = bad
-      ? '\nThe previous attempt returned Arabic characters. Hebrew script only this time.\n'
+      ? `\nThe previous attempt returned ${strayNames.join(' and ') || 'foreign-script'} characters. Write in ${lang.name} only this time.\n`
       : '';
     absorb(
       await callGemini(
         apiKey,
-        buildPrompt(missing, before.concat(chunk.slice(0, 6)), after) + note,
-        { temperature: 0.1, log, withRef, withSpk }
+        buildPrompt(missing, before.concat(chunk.slice(0, 6)), after, lang) + note,
+        { temperature: 0.1, log, withRef, withSpk, lang }
       ),
       false // take what we get this time
     );
@@ -221,9 +270,9 @@ async function translateChunk(apiKey, chunk, before, after, log) {
 // stretch that actually trips the filter ends up staying in English.
 const MIN_SPLIT = parseInt(process.env.MIN_SPLIT || '8', 10);
 
-async function bisect(apiKey, chunk, before, after, log, label) {
+async function bisect(apiKey, chunk, before, after, log, label, lang) {
   try {
-    return await translateChunk(apiKey, chunk, before, after, log);
+    return await translateChunk(apiKey, chunk, before, after, log, lang);
   } catch (e) {
     if (chunk.length <= MIN_SPLIT) {
       log(`  ! ${label}: ${chunk.length} lines could not be translated - left in English`);
@@ -233,8 +282,8 @@ async function bisect(apiKey, chunk, before, after, log, label) {
     const a = chunk.slice(0, mid);
     const b = chunk.slice(mid);
     log(`  > ${label} failed (${e.message.slice(0, 50)}) - splitting ${chunk.length} into ${a.length}+${b.length}`);
-    const ra = await bisect(apiKey, a, before, b.slice(0, CONTEXT).concat(after), log, label + '.1');
-    const rb = await bisect(apiKey, b, before.concat(a.slice(-CONTEXT)), after, log, label + '.2');
+    const ra = await bisect(apiKey, a, before, b.slice(0, CONTEXT).concat(after), log, label + '.1', lang);
+    const rb = await bisect(apiKey, b, before.concat(a.slice(-CONTEXT)), after, log, label + '.2', lang);
     const out = new Map(ra);
     for (const [k, v] of rb) out.set(k, v);
     return out;
@@ -256,14 +305,16 @@ async function pool(tasks, limit) {
 }
 
 /**
- * Translate parsed cues to Hebrew, keeping every original timing untouched.
+ * Translate parsed cues into the target language, keeping every timing untouched.
  * @param {object[]} cues  from srt.parse()
  * @param {string} apiKey  Gemini API key
  * @param {function} [onLog]
- * @returns {Promise<object[]>} new cues with Hebrew lines
+ * @param {string} [langCode]  target language; defaults to TARGET_LANG
+ * @returns {Promise<object[]>} new cues with translated lines
  */
-async function translateCues(cues, apiKey, onLog, refs, speakers) {
+async function translateCues(cues, apiKey, onLog, refs, speakers, langCode) {
   const log = onLog || (() => {});
+  const lang = langs.get(langCode || process.env.TARGET_LANG || langs.DEFAULT_CODE);
 
   // Only cues with actual words go to the model. A cue whose English is empty
   // but whose reference track has text still counts - that is exactly the
@@ -292,14 +343,14 @@ async function translateCues(cues, apiKey, onLog, refs, speakers) {
 
   const chunks = [];
   for (let i = 0; i < verbal.length; i += CHUNK) chunks.push(verbal.slice(i, i + CHUNK));
-  log(`translating ${verbal.length} lines in ${chunks.length} chunk(s) with ${MODEL}`);
+  log(`translating ${verbal.length} lines into ${lang.name} in ${chunks.length} chunk(s) with ${MODEL}`);
 
   const tasks = chunks.map((chunk, ci) => async () => {
     const startIdx = ci * CHUNK;
     const before = verbal.slice(Math.max(0, startIdx - CONTEXT), startIdx);
     const after = verbal.slice(startIdx + chunk.length, startIdx + chunk.length + CONTEXT);
     log(`  → chunk ${ci + 1}/${chunks.length} (lines ${chunk[0].n}–${chunk[chunk.length - 1].n})`);
-    return bisect(apiKey, chunk, before, after, log, 'chunk ' + (ci + 1));
+    return bisect(apiKey, chunk, before, after, log, 'chunk ' + (ci + 1), lang);
   });
 
   const maps = await pool(tasks, CONCURRENCY);
@@ -314,7 +365,7 @@ async function translateCues(cues, apiKey, onLog, refs, speakers) {
     const t = he.get(n);
     if (!t) return { ...c, lines: c.lines.slice() }; // non-verbal or failed → keep source
     translated++;
-    return { ...c, lines: wrap(t).map(rtl) };
+    return { ...c, lines: wrap(t, lang.maxLine).map((l) => markDirection(l, lang)) };
   });
 
   log(`done: ${translated}/${verbal.length} lines translated`);
@@ -324,4 +375,4 @@ async function translateCues(cues, apiKey, onLog, refs, speakers) {
   return result;
 }
 
-module.exports = { translateCues, MODEL };
+module.exports = { translateCues, systemPrompt, MODEL };
