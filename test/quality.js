@@ -1,5 +1,8 @@
 'use strict';
 
+// Stub addons run on 127.0.0.1; the server refuses private addresses otherwise.
+process.env.ALLOW_PRIVATE_SOURCES = '1';
+
 // The three real-world defects found while watching:
 //   1. sentence-final punctuation jumping to the start of the Hebrew line
 //   2. second-person gender guessed wrong

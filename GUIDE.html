@@ -276,8 +276,19 @@ Render עוקבת אחרי הקוד. כשיוצאת גרסה חדשה היא נ�
   <tr><td><code>CONCURRENCY</code></td><td>1</td><td>בקשות במקביל. לא להעלות — זה מה ששורף את המכסה לדקה</td></tr>
   <tr><td><code>REFERENCE_LANG</code></td><td>ריק</td><td>שפת ייחוס שמסמנת מגדר, למשל <code>spa</code>. משפר זכר/נקבה, מאריך בכשליש</td></tr>
   <tr><td><code>KEEP_SOUND_CUES</code></td><td>ריק</td><td><code>1</code> כדי להשאיר תיאורי סאונד במקום למחוק אותם</td></tr>
-  <tr><td><code>RATE_LIMIT_PER_DAY</code></td><td>40</td><td>תקרת פרקים חדשים ליום. רלוונטי רק במצב ציבורי</td></tr>
+  <tr><td><code>RATE_LIMIT_PER_DAY</code></td><td>40</td><td>תקרת פרקים חדשים ליום לכל פונה</td></tr>
+  <tr><td><code>RATE_LIMIT_TOTAL</code></td><td>200</td><td>תקרה יומית לכל השירות ביחד — ההגנה על המכסה שלכם</td></tr>
+  <tr><td><code>MAX_JOBS</code></td><td>3</td><td>תרגומים שרצים במקביל. גבוה יותר = סיכון לחריגה מהזיכרון</td></tr>
 </table>
+
+<div class="card">
+  <strong>הערה על המכסה</strong>
+  <p style="margin-bottom:0">
+    התקרות האלה הן מה שמגן על מפתח ה־Gemini שלכם: הן מגבילות כמה פרקים חדשים אפשר לתרגם
+    ביום, גם אם מישהו הגיע לכתובת השירות שלכם. פרק שכבר תורגם ויושב במטמון לא נספר,
+    כך שצפייה חוזרת אף פעם לא נחסמת.
+  </p>
+</div>
 
 <hr>
 

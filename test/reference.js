@@ -1,4 +1,7 @@
 'use strict';
+
+// Stub addons run on 127.0.0.1; the server refuses private addresses otherwise.
+process.env.ALLOW_PRIVATE_SOURCES = '1';
 // Reference-track alignment, and the rule that a foreign word beats English.
 const assert = require('assert');
 const srt = require('../src/srt');

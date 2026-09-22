@@ -16,6 +16,11 @@ if (-not (Test-Path $ngrok)) { Fail 'ngrok.exe missing - run INSTALL.bat first.'
 $line = Get-Content .env | Where-Object { $_ -like 'NGROK_DOMAIN=*' } | Select-Object -First 1
 if (-not $line) { Fail 'NGROK_DOMAIN missing from .env - run INSTALL.bat again.' }
 $domain = ($line -replace '^NGROK_DOMAIN=', '').Trim()
+# Both of these end up inside a command string below. A folder name or an .env
+# line containing a quote would otherwise close the string and run whatever
+# follows it, so neither is trusted as written.
+if ($domain -notmatch '^[A-Za-z0-9.-]+$') { Fail 'NGROK_DOMAIN in .env does not look like a domain - run INSTALL.bat again.' }
+$dirQ = $dir -replace "'", "''"
 $manifest = "https://$domain/manifest.json"
 
 $busy = $null
@@ -27,11 +32,11 @@ if ($busy) {
 
 Write-Host '  [1/3] starting the addon server...'
 Start-Process powershell -ArgumentList @('-NoExit','-NoProfile','-Command',
-  "`$host.UI.RawUI.WindowTitle='Hebrew Subs - SERVER'; Set-Location '$dir'; node --env-file=.env src/boot.js") | Out-Null
+  "`$host.UI.RawUI.WindowTitle='Hebrew Subs - SERVER'; Set-Location '$dirQ'; node --env-file=.env src/boot.js") | Out-Null
 
 Write-Host '  [2/3] opening the tunnel...'
 Start-Process powershell -ArgumentList @('-NoExit','-NoProfile','-Command',
-  "`$host.UI.RawUI.WindowTitle='Hebrew Subs - TUNNEL'; Set-Location '$dir'; .\ngrok.exe http 7788 --url https://$domain") | Out-Null
+  "`$host.UI.RawUI.WindowTitle='Hebrew Subs - TUNNEL'; Set-Location '$dirQ'; .\ngrok.exe http 7788 --url https://$domain") | Out-Null
 
 Write-Host '  [3/3] checking that the addon answers over the tunnel...'
 $ok = $false

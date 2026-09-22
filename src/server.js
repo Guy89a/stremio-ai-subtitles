@@ -42,6 +42,29 @@ function cacheKey(url) {
 }
 const cachePath = (key) => path.join(CACHE_DIR, `${key}.srt`);
 
+// Every .srt link this server hands out is signed. Without that, /sub is an
+// open door: anyone could name any address as the source, have the server
+// fetch it and translate it on the operator's Gemini quota, and plant the
+// result under a cache name a real viewer would later ask for.
+const SIGN_KEY =
+  (process.env.SECRET || '').length >= 16
+    ? crypto.createHash('sha256').update('url-signing|' + process.env.SECRET).digest()
+    : crypto.randomBytes(32); // no SECRET: links last as long as this process
+
+const sign = (src, ref) =>
+  crypto.createHmac('sha256', SIGN_KEY).update(`${src}|${ref || ''}`).digest('base64url').slice(0, 22);
+
+function signOk(src, ref, sig) {
+  const want = Buffer.from(sign(src, ref));
+  const got = Buffer.from(String(sig || ''));
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
+}
+
+// One instance on the free plan has 512 MB and one CPU. A translation holds a
+// whole parsed episode in memory and can sit in backoff for minutes, so the
+// number that may run at once is capped rather than left to the caller.
+const MAX_JOBS = parseInt(process.env.MAX_JOBS || '3', 10);
+
 function readCache(key) {
   try {
     const p = cachePath(key);
@@ -75,6 +98,7 @@ async function buildHebrew(key, sourceUrl, apiKey, refUrl, altUrls) {
   const cached = readCache(key);
   if (cached) return cached;
   if (jobs.has(key)) return jobs.get(key);
+  if (jobs.size >= MAX_JOBS) throw new Error('busy - too many translations in flight');
 
   const job = (async () => {
     log(`[${key}] downloading ${sourceUrl.slice(0, 90)}`);
@@ -237,7 +261,7 @@ copy.onclick=function(){
 function manifest(configured) {
   return {
     id: 'community.hebrew.ai.subtitles',
-    version: '1.4.0',
+    version: '1.5.0',
     name: 'כתוביות עברית (AI)',
     description:
       'מתרגם כתוביות אנגלית לעברית עם מודל שפה — קורא את הדיאלוג כרצף שלם ומחזיר אותו לשורות בתזמון המקורי.',
@@ -271,9 +295,21 @@ const sendJson = (res, obj, cache = 'public, max-age=300') =>
     'cache-control': cache,
   });
 
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Both of these headers are set by whatever sits in front of us, and a caller
+// can send them too. Anything that is not host-shaped is discarded rather than
+// echoed back into a URL or a page.
 function publicBase(req) {
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const raw = String(req.headers['x-forwarded-host'] || req.headers.host || '')
+    .split(',')[0]
+    .trim();
+  const host = /^[A-Za-z0-9._-]+(:\d{1,5})?$/.test(raw) ? raw : 'localhost';
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https'
+    ? 'https'
+    : 'http';
   return `${proto}://${host}`;
 }
 
@@ -298,20 +334,42 @@ function decodeConfig(segment) {
 // A stolen install URL should be worth very little. Each config gets its own
 // daily budget of episodes; the cache means re-watching costs nothing.
 const RATE_PER_DAY = parseInt(process.env.RATE_LIMIT_PER_DAY || '40', 10);
-const buckets = new Map(); // fingerprint -> { day, episodes:Set }
+// A ceiling for the whole deployment, so no combination of callers can empty
+// the operator's Gemini quota in an afternoon.
+const GLOBAL_PER_DAY = parseInt(process.env.RATE_LIMIT_TOTAL || String(RATE_PER_DAY * 5), 10);
+const buckets = new Map(); // caller id -> { day, episodes:Set }
+let global_ = { day: -1, episodes: new Set() };
 
-function withinRate(token, episodeKey) {
-  if (!token || RATE_PER_DAY <= 0) return true;
+// Who is asking. A sealed token identifies a person; without one the best we
+// have is the address. The earlier version only counted token holders, which
+// meant a deployment with its own key counted nobody at all.
+function callerId(req, token) {
+  if (token) return 'k:' + secret.fingerprint(token);
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return 'ip:' + (fwd || (req.socket && req.socket.remoteAddress) || 'unknown');
+}
+
+function withinRate(id, episodeKey) {
+  if (RATE_PER_DAY <= 0) return true;
   const day = Math.floor(Date.now() / 86400000);
-  const fp = secret.fingerprint(token);
-  let b = buckets.get(fp);
+
+  if (global_.day !== day) {
+    global_ = { day, episodes: new Set() };
+    buckets.clear(); // yesterday's callers are not worth remembering
+  }
+
+  let b = buckets.get(id);
   if (!b || b.day !== day) {
     b = { day, episodes: new Set() };
-    buckets.set(fp, b);
+    buckets.set(id, b);
   }
-  if (b.episodes.has(episodeKey)) return true; // already counted
+  if (b.episodes.has(episodeKey)) return true; // already counted today
+
   if (b.episodes.size >= RATE_PER_DAY) return false;
+  if (global_.episodes.size >= GLOBAL_PER_DAY && !global_.episodes.has(episodeKey)) return false;
+
   b.episodes.add(episodeKey);
+  global_.episodes.add(episodeKey);
   return true;
 }
 
@@ -328,11 +386,12 @@ async function handleSubtitles(req, res, { type, id, extra, apiKey, token }) {
   if (!sources.length) return sendJson(res, { subtitles: [] }, 'no-store');
 
   const base = publicBase(req);
+  const who = callerId(req, token);
   const subtitles = [];
   for (const [i, s] of sources.entries()) {
     const key = cacheKey(s.url + '|' + (refUrl || ''));
-    if (!readCache(key) && !withinRate(token, key)) {
-      log(`rate limit reached for ${secret.fingerprint(token)} - skipping`);
+    if (!readCache(key) && !withinRate(who, key)) {
+      log(`rate limit reached for ${who} - skipping`);
       break;
     }
     // Warm the cache now so the file is usually ready the moment it is picked.
@@ -342,7 +401,10 @@ async function handleSubtitles(req, res, { type, id, extra, apiKey, token }) {
     const carry = token ? `&c=${encodeURIComponent(token)}` : '';
     subtitles.push({
       id: `he-ai-${key}`,
-      url: `${base}/sub/${key}.srt?src=${encodeURIComponent(s.url)}${refUrl ? `&ref=${encodeURIComponent(refUrl)}` : ''}${carry}`,
+      url:
+        `${base}/sub/${key}.srt?src=${encodeURIComponent(s.url)}` +
+        (refUrl ? `&ref=${encodeURIComponent(refUrl)}` : '') +
+        `&s=${sign(s.url, refUrl)}${carry}`,
       lang: i === 0 ? 'heb' : `heb-${i + 1}`,
     });
   }
@@ -353,6 +415,7 @@ async function handleSubtitles(req, res, { type, id, extra, apiKey, token }) {
 async function handleSrt(req, res, url) {
   const key = path.basename(url.pathname).replace(/\.srt$/i, '');
   const src = url.searchParams.get('src');
+  const ref = url.searchParams.get('ref') || undefined;
   const carried = url.searchParams.get('c');
   const cfg = carried ? decodeConfig(carried) : null;
   const apiKey = (cfg && cfg.key) || ENV_KEY;
@@ -362,16 +425,32 @@ async function handleSrt(req, res, url) {
     'cache-control': 'public, max-age=86400',
   };
 
+  // Something already translated and vetted is safe to serve as-is.
   const cached = readCache(key);
   if (cached) return send(res, 200, cached, headers);
   if (!src || !apiKey) return send(res, 404, 'not found');
 
+  // Two checks, and both have to pass before anything is fetched.
+  //  - the signature proves this server issued the link, so the source cannot
+  //    be swapped for an address of the caller's choosing;
+  //  - the name must be the one this source hashes to, so nothing can be
+  //    stored under a name that belongs to a different episode.
+  if (!signOk(src, ref, url.searchParams.get('s'))) return send(res, 404, 'not found');
+  if (key !== cacheKey(`${src}|${ref || ''}`)) return send(res, 404, 'not found');
+
+  const who = callerId(req, carried || null);
+  if (!withinRate(who, key)) {
+    return send(res, 429, 'daily limit reached', { 'content-type': 'text/plain' });
+  }
+
   try {
-    const body = await buildHebrew(key, src, apiKey, url.searchParams.get('ref') || undefined);
+    const body = await buildHebrew(key, src, apiKey, ref);
     send(res, 200, body, headers);
   } catch (e) {
+    // The detail goes to the log, not to the caller: distinct messages told an
+    // outsider the difference between a closed port and a refused request.
     log('srt error:', e.message);
-    send(res, 502, `translation failed: ${e.message}`, { 'content-type': 'text/plain' });
+    send(res, 502, 'translation failed', { 'content-type': 'text/plain' });
   }
 }
 
@@ -385,13 +464,17 @@ const server = http.createServer(async (req, res) => {
   const RESERVED = ['manifest.json', 'subtitles', 'sub', 'health', 'configure', 'api', ''];
   let apiKey = ENV_KEY;
   let token = null;
-  if (parts.length && !RESERVED.includes(parts[0])) {
+  if (parts.length && !RESERVED.includes(parts[0].toLowerCase())) {
     const cfg = decodeConfig(parts[0]);
     if (cfg && cfg.key) {
       apiKey = cfg.key;
       token = parts[0];
+      parts.shift();
+    } else {
+      // An unreadable first segment is not a route prefix. Consuming it anyway
+      // gave every endpoint unlimited aliases.
+      return send(res, 404, 'not found');
     }
-    parts.shift();
   }
 
   try {
@@ -410,8 +493,8 @@ const server = http.createServer(async (req, res) => {
 <body style="font-family:system-ui;max-width:620px;margin:3rem auto;padding:0 1rem;direction:rtl">
 <h1>כתוביות עברית (AI)</h1>
 <p>השרת פעיל. כדי להתקין בסטרמיו, הדביקו את הכתובת הזו בשורת החיפוש של Addons:</p>
-<p><code style="background:#eee;padding:.5rem;display:block;direction:ltr">${base}/manifest.json</code></p>
-<p>מנוע תרגום: <b>${MODEL}</b> · מקורות אנגלית: ${UPSTREAMS.length} · מפתח API: ${
+<p><code style="background:#eee;padding:.5rem;display:block;direction:ltr">${escapeHtml(base)}/manifest.json</code></p>
+<p>מנוע תרגום: <b>${escapeHtml(MODEL)}</b> · מקורות אנגלית: ${UPSTREAMS.length} · מפתח API: ${
           ENV_KEY ? 'מוגדר ✅' : 'חסר ❌'
         }</p></body>`,
         { 'content-type': 'text/html; charset=utf-8' }
@@ -421,7 +504,9 @@ const server = http.createServer(async (req, res) => {
     if (parts[0] === 'health') return sendJson(res, { ok: true, model: MODEL, key: !!apiKey });
     if (parts[0] === 'manifest.json') return sendJson(res, manifest(!!token || !!ENV_KEY));
 
-    if (parts[0] === 'sub') return handleSrt(req, res, url);
+    // Awaited, not just returned: an un-awaited rejection here escapes the
+    // catch below and, on current Node, takes the whole process down.
+    if (parts[0] === 'sub') return await handleSrt(req, res, url);
 
     if (parts[0] === 'subtitles') {
       // /subtitles/:type/:id.json  or  /subtitles/:type/:id/:extra.json
@@ -431,12 +516,16 @@ const server = http.createServer(async (req, res) => {
       const id = decodeURIComponent(segs[0] || '');
       const extra = segs.length > 1 ? segs.slice(1).join('/') : '';
       if (!type || !id) return sendJson(res, { subtitles: [] }, 'no-store');
-      return handleSubtitles(req, res, { type, id, extra, apiKey, token });
+      return await handleSubtitles(req, res, { type, id, extra, apiKey, token });
     }
 
     // Turn a pasted key into a personal install URL. The key is used to build
     // the token and is never written to disk or to the log.
     if (parts[0] === 'api' && parts[1] === 'url' && req.method === 'POST') {
+      // A deployment with its own key is not a sign-up service. Leaving this
+      // open meant hosting a key-entry form nobody asked for, and a free
+      // "is this Google key valid?" oracle running from this server's address.
+      if (ENV_KEY) return send(res, 404, 'not found');
       let body = '';
       for await (const chunk of req) {
         body += chunk;
@@ -450,9 +539,12 @@ const server = http.createServer(async (req, res) => {
       }
       // Check it against Google before handing back a link that cannot work.
       try {
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 10000);
         const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
           headers: { 'x-goog-api-key': key },
-        });
+          signal: ctl.signal,
+        }).finally(() => clearTimeout(timer));
         if (!r.ok) return sendJson(res, { error: 'Google rejected that key.' }, 'no-store');
       } catch {
         return sendJson(res, { error: 'Could not reach Google to check the key.' }, 'no-store');
@@ -461,6 +553,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (parts[0] === 'configure') {
+      if (ENV_KEY) return send(res, 404, 'not found');
       return send(res, 200, configurePage(publicBase(req)), {
         'content-type': 'text/html; charset=utf-8',
       });
@@ -481,6 +574,12 @@ function lanAddress() {
   }
   return '127.0.0.1';
 }
+
+// A subtitle addon is not worth taking the process down for. Anything that
+// slips past a handler is logged and the service keeps answering - otherwise
+// one malformed reply from an upstream addon becomes a restart loop.
+process.on('unhandledRejection', (e) => log('unhandled rejection:', (e && e.stack) || e));
+process.on('uncaughtException', (e) => log('uncaught exception:', (e && e.stack) || e));
 
 module.exports = server;
 

@@ -70,10 +70,11 @@ if ($fallback) { Say "      fallback: $fallback" 'DarkGray' }
 # ---------- 3. ngrok.exe --------------------------------------------------
 $ngrok = Join-Path $dir 'ngrok.exe'
 if (-not (Test-Path $ngrok)) {
-  $found = @((Join-Path $HOME 'Downloads\ngrok.exe')) + @(
-    Get-ChildItem (Join-Path $HOME 'Downloads') -Filter 'ngrok.exe' -Recurse -ErrorAction SilentlyContinue |
-    Select-Object -First 3 -ExpandProperty FullName
-  ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+  # Only the exact path the instructions name. Searching the whole Downloads
+  # tree and running the first ngrok.exe it turns up means anything that
+  # happens to carry that name gets executed, and handed your authtoken.
+  $found = @((Join-Path $HOME 'Downloads\ngrok.exe')) |
+    Where-Object { Test-Path $_ } | Select-Object -First 1
   if (-not $found) {
     Say ''
     Say 'ngrok is missing. The download page is opening now.' 'Yellow'
@@ -81,12 +82,16 @@ if (-not (Test-Path $ngrok)) {
     Say '(right-click - Extract All). Do not use the Microsoft Store version.' 'Yellow'
     Start-Process 'https://ngrok.com/download'
     Read-Host '  Press Enter once ngrok.exe is in your Downloads folder'
-    $found = @((Join-Path $HOME 'Downloads\ngrok.exe')) + @(
-      Get-ChildItem (Join-Path $HOME 'Downloads') -Filter 'ngrok.exe' -Recurse -ErrorAction SilentlyContinue |
-      Select-Object -First 3 -ExpandProperty FullName
-    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+    $found = @((Join-Path $HOME 'Downloads\ngrok.exe')) |
+      Where-Object { Test-Path $_ } | Select-Object -First 1
   }
   if (-not $found) { Stop-Here 'Could not find ngrok.exe. Put it next to this installer and rerun.' }
+  Say ''
+  Say "About to use this file as ngrok, and run it:" 'Yellow'
+  Say "  $found" 'Yellow'
+  if ((Read-Host '  Is that the file you downloaded from ngrok.com? (y/N)') -ne 'y') {
+    Stop-Here 'Stopped. Put the ngrok.exe you downloaded next to this installer and rerun.'
+  }
   Copy-Item $found $ngrok -Force
 }
 Say '[3/6] ngrok.exe is in place' 'Green'
@@ -103,6 +108,8 @@ else { Say '[4/6] no token entered - the tunnel will not start without it' 'Yell
 
 $domain = (Read-Host '  Paste your DOMAIN (e.g. abc-12-34.ngrok-free.app)').Trim() -replace '^https?://', '' -replace '/+$', ''
 if (-not $domain) { Stop-Here 'No domain entered.' }
+# START.bat puts this into a command line, so only a plain hostname is allowed.
+if ($domain -notmatch '^[A-Za-z0-9.-]+$') { Stop-Here 'That does not look like a domain - paste just the hostname.' }
 Say "[5/6] domain: $domain" 'Green'
 
 # ---------- 5. write .env -------------------------------------------------

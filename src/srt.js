@@ -27,15 +27,23 @@ function msToTc(ms) {
   return `${p(h)}:${p(min)}:${p(s)},${p(f, 3)}`;
 }
 
+// A subtitle file for a feature film is well under 200 KB. Anything far past
+// that is not a subtitle file, and parsing it only burns CPU we do not have.
+const MAX_INPUT = parseInt(process.env.MAX_SUBTITLE_BYTES || '2000000', 10);
+
 /**
  * Parse an SRT or WebVTT string into cues.
  * @returns {{index:number,start:number,end:number,lines:string[]}[]}
  */
 function parse(text) {
-  let t = stripBom(String(text)).replace(/\r\n?/g, '\n');
-  // Drop a WEBVTT header and NOTE/STYLE blocks if present
-  t = t.replace(/^WEBVTT[^\n]*\n(?:[^\n]*\n)*?\n/, '');
-  t = t.replace(/^(NOTE|STYLE|REGION)\b[\s\S]*?\n\n/gm, '');
+  const src = String(text);
+  if (src.length > MAX_INPUT) {
+    throw new Error(`subtitle file too large (${src.length} bytes)`);
+  }
+  let t = stripBom(src).replace(/\r\n?/g, '\n');
+  // Drop a WEBVTT header if present. Anchored at the start of the string and
+  // bounded to the first blank line, so it cannot backtrack across the file.
+  t = t.replace(/^WEBVTT[^\n]*\n(?:[^\n]+\n)*/, '');
 
   const blocks = t.split(/\n{2,}/);
   const cues = [];
@@ -44,6 +52,10 @@ function parse(text) {
   for (const block of blocks) {
     const raw = block.split('\n').filter((l) => l.trim() !== '');
     if (!raw.length) continue;
+    // WebVTT metadata blocks carry no dialogue. Recognising them here, in the
+    // block loop, keeps parsing linear; the regex this replaced rescanned the
+    // whole file once per line and turned 1 MB of input into 45 seconds of CPU.
+    if (/^(NOTE|STYLE|REGION)\b/.test(raw[0])) continue;
 
     let i = 0;
     // optional numeric counter line
