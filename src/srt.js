@@ -67,6 +67,7 @@ function parse(text) {
 function serialize(cues) {
   return (
     cues
+      .filter((c) => !c.drop && c.lines && c.lines.join('').trim() !== '')
       .map(
         (c, i) =>
           `${i + 1}\n${msToTc(c.start)} --> ${msToTc(c.end)}\n${c.lines.join('\n')}`
@@ -118,4 +119,170 @@ function wrap(text, maxLen = 42) {
   return [first, second];
 }
 
-module.exports = { parse, serialize, tcToMs, msToTc, isNonVerbal, cueToSource, wrap };
+
+// ---------- SDH: speaker labels and sound descriptions ----------
+
+// Subtitles for the deaf and hard of hearing carry two extras a hearing
+// viewer does not want on screen, but which are gold for a translator:
+//   [MARIA] or MARIA:   - who is speaking
+//   [door creaks]        - what can be heard
+// Speaker labels are conventionally ALL CAPS; sound descriptions are not.
+
+const SPK_BRACKET = /^\s*(?:[-–—]\s*)?[\[(]([^\])]{1,28})[\])]\s*:?\s*/;
+const SPK_COLON = /^\s*(?:[-–—]\s*)?([A-Z][A-Z0-9 .'’#&-]{1,26}):\s+/;
+const SOUND_ANY = /[\[(][^\])]*[\])]/g;
+
+// Words that give a sound description away even though it is shouted in caps.
+const SOUND_WORDS = new RegExp(
+  '\\b(?:CREAK|SLAM|RING|BEEP|HONK|BLAR|REV|CHIRP|BARK|SCREAM|SHOUT|YELL|WHISPER|' +
+  'LAUGH|SIGH|GASP|GRUNT|GROAN|SOB|SNIFF|KNOCK|CLICK|CLATTER|CRASH|BANG|THUD|RUSTL|' +
+  'SIREN|MUSIC|THEME|APPLAUS|CHEER|CHATTER|FOOTSTEP|ENGINE|GUNSHOT|GUNFIRE|EXPLOSION|' +
+  'WIND|RAIN|THUNDER|DOOR|PHONE|ALARM|BELL|HORN|TIRE|BRAKE|WHIR|BUZZ|HISS|STATIC|' +
+  'INDISTINCT|MUFFLED|DISTANT|OVERLAPPING|SPEAKING|CONTINUES|PLAYING|FADES|SQUEAL|' +
+  'BREATH|PANT|COUGH|SNOR|BEEPING|RUMBL|SPLASH|FOOTSTEPS|CLANG|CHIME)'
+);
+
+function looksLikeName(s) {
+  const t = String(s).trim();
+  if (!t || t.length > 28) return false;
+  if (/[a-z]/.test(t)) return false;          // sound cues are not shouted
+  if (SOUND_WORDS.test(t)) return false;      // "[ENGINE REVS] Get down!"
+  if (/ING$/.test(t)) return false;           // "[SIRENS WAILING]"
+  return /[A-Z\u0590-\u05FF]/.test(t);
+}
+
+/**
+ * Split a cue's text into who is speaking and what they say, and optionally
+ * drop the sound descriptions.
+ * @returns {{speaker:string, text:string, soundOnly:boolean}}
+ */
+function splitSdh(raw, { stripSound = true } = {}) {
+  let text = String(raw || '').trim();
+  let speaker = '';
+
+  let m = SPK_BRACKET.exec(text);
+  if (m && looksLikeName(m[1])) {
+    speaker = m[1].trim();
+    text = text.slice(m[0].length);
+    if (/^[-–—]/.test(raw.trim())) text = '- ' + text;
+  } else {
+    m = SPK_COLON.exec(text);
+    if (m && looksLikeName(m[1])) {
+      speaker = m[1].trim();
+      text = text.slice(m[0].length);
+      if (/^[-–—]/.test(raw.trim())) text = '- ' + text;
+    }
+  }
+
+  if (stripSound) text = text.replace(SOUND_ANY, ' ');
+  text = text.replace(/\s+/g, ' ').trim();
+
+  // "(BIRDS CHIRPING)" is shouty too, but nobody is speaking: if the bracket
+  // swallowed the whole cue, it was a sound description, not a name.
+  const soundOnly = !text || isNonVerbal(text);
+  if (soundOnly) speaker = '';
+
+  return { speaker, text, soundOnly };
+}
+
+/** How much of a track carries speaker labels - used to spot an SDH file. */
+function sdhScore(cues) {
+  if (!cues || !cues.length) return 0;
+  let n = 0;
+  for (const c of cues) if (splitSdh(cueToSource(c), { stripSound: false }).speaker) n++;
+  return n / cues.length;
+}
+
+// ---------- aligning a second language against the English track ----------
+
+/**
+ * Match a reference subtitle track onto the cues we are translating, by time.
+ *
+ * Two tracks for the same episode never share cue boundaries, so each English
+ * cue collects the text of every reference cue its window overlaps.
+ *
+ * @returns {{ref: string[], orphans: object[]}}
+ *   ref     - one string per input cue ('' when the reference has nothing)
+ *   orphans - reference cues that overlap no cue at all. These are usually
+ *             dialogue the English track left untranslated on purpose,
+ *             because the picture carries burned-in subtitles for it.
+ */
+function alignByTime(cues, refCues, minOverlapMs = 200) {
+  const ref = new Array(cues.length).fill('');
+  const used = new Set();
+  if (!Array.isArray(refCues) || !refCues.length) return { ref, orphans: [] };
+
+  const sorted = refCues.slice().sort((a, b) => a.start - b.start);
+  let j = 0;
+
+  for (let i = 0; i < cues.length; i++) {
+    const c = cues[i];
+    while (j < sorted.length && sorted[j].end < c.start) j++;
+    const parts = [];
+    for (let k = j; k < sorted.length && sorted[k].start <= c.end; k++) {
+      const overlap = Math.min(c.end, sorted[k].end) - Math.max(c.start, sorted[k].start);
+      if (overlap >= Math.min(minOverlapMs, (c.end - c.start) / 2)) {
+        parts.push(cueToSource(sorted[k]));
+        used.add(k);
+      }
+    }
+    ref[i] = parts.join(' ').trim();
+  }
+
+  const orphans = sorted.filter((_, k) => !used.has(k) && !isNonVerbal(cueToSource(sorted[k])));
+  return { ref, orphans };
+}
+
+
+/**
+ * Fold the reference lines that the English track never covered back into the
+ * cue list, in time order. Those are the moments where characters speak a
+ * language the English subtitles deliberately left alone, because the picture
+ * carried burned-in subtitles for them.
+ *
+ * The inserted cues carry no English text at all - only the reference - which
+ * is the signal to translate them from the reference instead.
+ */
+function mergeOrphans(cues, refs, orphans) {
+  const rows = cues.map((c, i) => ({ cue: c, ref: (refs && refs[i]) || '' }));
+  for (const o of orphans || []) {
+    rows.push({
+      cue: { index: 0, start: o.start, end: o.end, lines: [''], fromRef: true },
+      ref: cueToSource(o),
+    });
+  }
+  rows.sort((a, b) => a.cue.start - b.cue.start || a.cue.end - b.cue.end);
+  return {
+    cues: rows.map((r, i) => ({ ...r.cue, index: i + 1 })),
+    refs: rows.map((r) => r.ref),
+  };
+}
+
+// ---------- bidi ----------
+
+const RLE = '‫'; // start an explicit right-to-left run
+const PDF = '‬'; // end it
+
+// Subtitle files carry no direction information, so a player is free to lay a
+// line out left-to-right. When it does, a trailing "." or "?" is a neutral
+// character at the end of an LTR paragraph and gets pushed to the wrong side -
+// it shows up at the start of the Hebrew sentence. Wrapping the line in an
+// explicit RTL run settles the direction regardless of what the player assumes.
+function rtl(line) {
+  if (!line || !/[֐-׿]/.test(line)) return line; // nothing Hebrew here
+  const bare = line.replace(/[‪-‮⁦-⁩]/g, '');
+  return RLE + bare + PDF;
+}
+
+// Arabic, Persian and Arabic presentation forms. Gemini sometimes slips a
+// single Arabic word into otherwise fine Hebrew; catching it lets us re-ask.
+const FOREIGN = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+
+function hasForeignScript(s) {
+  return FOREIGN.test(String(s || ''));
+}
+
+module.exports = {
+  parse, serialize, tcToMs, msToTc, isNonVerbal, cueToSource, wrap,
+  rtl, hasForeignScript, alignByTime, mergeOrphans, splitSdh, sdhScore, RLE, PDF,
+};

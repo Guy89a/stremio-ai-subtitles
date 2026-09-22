@@ -9,12 +9,25 @@ const os = require('os');
 const srt = require('./srt');
 const secret = require('./secret');
 const { translateCues, MODEL } = require('./translate');
-const { findEnglishSubtitles, downloadSubtitle, UPSTREAMS } = require('./sources');
+const { fetchAll, pickLang, downloadSubtitle, UPSTREAMS } = require('./sources');
 
 const PORT = parseInt(process.env.PORT || '7788', 10);
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, '..', 'cache');
 const MAX_SOURCES = parseInt(process.env.MAX_SOURCES || '2', 10);
 const ENV_KEY = process.env.GEMINI_API_KEY || '';
+
+// Optional: a second subtitle track in a language that marks gender and number,
+// shown to the model alongside the English as evidence. Empty = off.
+const REF_LANG = (process.env.REFERENCE_LANG || '').toLowerCase().trim();
+// Fold in dialogue the English track skipped entirely (characters speaking
+// another language). Only possible when a reference track is configured.
+const FILL_GAPS = process.env.FILL_FOREIGN_GAPS !== '0';
+const REF_ALIASES = {
+  spa: ['spa', 'es', 'spanish'], por: ['por', 'pt', 'portuguese'],
+  fre: ['fre', 'fra', 'fr', 'french'], ita: ['ita', 'it', 'italian'],
+  rus: ['rus', 'ru', 'russian'], ger: ['ger', 'deu', 'de', 'german'],
+  pol: ['pol', 'pl', 'polish'],
+};
 
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 
@@ -39,7 +52,26 @@ function readCache(key) {
   }
 }
 
-async function buildHebrew(key, sourceUrl, apiKey) {
+// Try the other English candidates until one turns out to be an SDH track
+// (the kind that names its speakers). Subtitle files are tiny, so a couple of
+// extra downloads cost nothing next to what we learn from them.
+async function findSpeakers(cues, altUrls, log) {
+  for (const u of (altUrls || []).slice(0, 3)) {
+    try {
+      const alt = srt.parse(await downloadSubtitle(u));
+      const score = srt.sdhScore(alt);
+      if (score < 0.02) continue;
+      const { ref } = srt.alignByTime(cues, alt);
+      const speakers = ref.map((t) => srt.splitSdh(t, { stripSound: false }).speaker);
+      const named = speakers.filter(Boolean).length;
+      log(`SDH track found (${Math.round(score * 100)}% labelled) - ${named} lines attributed`);
+      return speakers;
+    } catch { /* try the next candidate */ }
+  }
+  return undefined;
+}
+
+async function buildHebrew(key, sourceUrl, apiKey, refUrl, altUrls) {
   const cached = readCache(key);
   if (cached) return cached;
   if (jobs.has(key)) return jobs.get(key);
@@ -51,18 +83,51 @@ async function buildHebrew(key, sourceUrl, apiKey) {
     if (!cues.length) throw new Error('could not parse the source subtitle file');
     log(`[${key}] parsed ${cues.length} cues`);
 
-    const translated = await translateCues(cues, apiKey, (m) => log(`[${key}] ${m}`));
+    // Optional second language, used as evidence about meaning - and, where
+    // the English track skipped a line entirely, as the source for it.
+    let refs;
+    let work = cues;
+    if (refUrl) {
+      try {
+        const refCues = srt.parse(await downloadSubtitle(refUrl));
+        const aligned = srt.alignByTime(cues, refCues);
+        refs = aligned.ref;
+        log(`[${key}] ${REF_LANG} reference: ${refCues.length} cues, ${aligned.orphans.length} with no English counterpart`);
+        if (FILL_GAPS && aligned.orphans.length) {
+          const merged = srt.mergeOrphans(cues, aligned.ref, aligned.orphans);
+          work = merged.cues;
+          refs = merged.refs;
+          log(`[${key}] filled in ${aligned.orphans.length} line(s) the English track skipped`);
+        }
+      } catch (e) {
+        log(`[${key}] reference track unavailable (${e.message}) - continuing without it`);
+      }
+    }
 
-    // Timings are carried straight through — only the text changed.
-    for (let i = 0; i < cues.length; i++) {
-      if (translated[i].start !== cues[i].start || translated[i].end !== cues[i].end) {
+    // Speaker names: from this track if it is already SDH, otherwise from a
+    // sibling English track that is.
+    let speakers;
+    const own = srt.sdhScore(work);
+    if (own >= 0.02) {
+      log(`[${key}] source already names speakers (${Math.round(own * 100)}%)`);
+    } else if (altUrls && altUrls.length) {
+      speakers = await findSpeakers(work, altUrls, (m) => log(`[${key}] ${m}`));
+    }
+
+    const translated = await translateCues(
+      work, apiKey, (m) => log(`[${key}] ${m}`), refs, speakers
+    );
+
+    // Every cue keeps the timing it arrived with — English or reference.
+    for (let i = 0; i < work.length; i++) {
+      if (translated[i].start !== work[i].start || translated[i].end !== work[i].end) {
         throw new Error('internal: timing drift detected');
       }
     }
 
     const out = '﻿' + srt.serialize(translated);
     fs.writeFileSync(cachePath(key), out, 'utf8');
-    log(`[${key}] cached ${cues.length} cues`);
+    log(`[${key}] cached ${work.length} cues`);
     return out;
   })();
 
@@ -172,7 +237,7 @@ copy.onclick=function(){
 function manifest(configured) {
   return {
     id: 'community.hebrew.ai.subtitles',
-    version: '1.0.0',
+    version: '1.4.0',
     name: 'כתוביות עברית (AI)',
     description:
       'מתרגם כתוביות אנגלית לעברית עם מודל שפה — קורא את הדיאלוג כרצף שלם ומחזיר אותו לשורות בתזמון המקורי.',
@@ -253,26 +318,31 @@ function withinRate(token, episodeKey) {
 async function handleSubtitles(req, res, { type, id, extra, apiKey, token }) {
   if (!apiKey) return sendJson(res, { subtitles: [] }, 'no-store');
 
-  const sources = (await findEnglishSubtitles(type, id, extra)).slice(0, MAX_SOURCES);
-  log(`subtitles ${type}/${id} → ${sources.length} english source(s)`);
+  const all = await fetchAll(type, id, extra);
+  const english = pickLang(all, ['eng', 'en']);
+  const sources = english.slice(0, MAX_SOURCES);
+  const refUrl = REF_LANG
+    ? (pickLang(all, REF_ALIASES[REF_LANG] || [REF_LANG])[0] || {}).url
+    : undefined;
+  log(`subtitles ${type}/${id} → ${sources.length} english source(s)${refUrl ? `, ${REF_LANG} reference found` : ''}`);
   if (!sources.length) return sendJson(res, { subtitles: [] }, 'no-store');
 
   const base = publicBase(req);
   const subtitles = [];
   for (const [i, s] of sources.entries()) {
-    const key = cacheKey(s.url);
+    const key = cacheKey(s.url + '|' + (refUrl || ''));
     if (!readCache(key) && !withinRate(token, key)) {
       log(`rate limit reached for ${secret.fingerprint(token)} - skipping`);
       break;
     }
     // Warm the cache now so the file is usually ready the moment it is picked.
-    buildHebrew(key, s.url, apiKey).catch(() => {});
+    buildHebrew(key, s.url, apiKey, refUrl, english.filter((o) => o.url !== s.url).map((o) => o.url)).catch(() => {});
     // The key itself never travels here: on a public server `token` is the
     // sealed blob, and on a local one the key already lives in the env.
     const carry = token ? `&c=${encodeURIComponent(token)}` : '';
     subtitles.push({
       id: `he-ai-${key}`,
-      url: `${base}/sub/${key}.srt?src=${encodeURIComponent(s.url)}${carry}`,
+      url: `${base}/sub/${key}.srt?src=${encodeURIComponent(s.url)}${refUrl ? `&ref=${encodeURIComponent(refUrl)}` : ''}${carry}`,
       lang: i === 0 ? 'heb' : `heb-${i + 1}`,
     });
   }
@@ -297,7 +367,7 @@ async function handleSrt(req, res, url) {
   if (!src || !apiKey) return send(res, 404, 'not found');
 
   try {
-    const body = await buildHebrew(key, src, apiKey);
+    const body = await buildHebrew(key, src, apiKey, url.searchParams.get('ref') || undefined);
     send(res, 200, body, headers);
   } catch (e) {
     log('srt error:', e.message);
