@@ -20,7 +20,8 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Guy89a/stremio-hebrew-subs)
 
-לוחצים על הכפתור, ומתבקשים למלא `GEMINI_API_KEY` — מפתח חינמי מ־[Google AI Studio](https://aistudio.google.com/apikey).
+לוחצים על הכפתור וממלאים שני שדות: **Blueprint Name** — שדה חובה שמגיע ריק, כל שם עובד — ו־`GEMINI_API_KEY`,
+מפתח חינמי מ־[Google AI Studio](https://aistudio.google.com/apikey).
 זהו. שאר ההגדרות נקבעות לבד, כולל `SECRET` שנוצר אוטומטית.
 
 כשהפריסה מסתיימת, כתובת ההתקנה לסטרמיו היא כתובת השירות שקיבלתם, עם הסיומת:
@@ -35,7 +36,8 @@ https://<השירות-שלכם>.onrender.com/manifest.json
 > באנדרואיד אין כפתור "Add addon" — מדביקים את הכתובת בשדה החיפוש עצמו והתוסף מופיע.
 > התקנה באפליקציית הדסקטופ עם אותו חשבון מסתנכרנת לטלפון ולטלוויזיה.
 
-**נתקעתם?** `מדריך-התקנה.html` שבריפו מפורט יותר, כולל תקלות נפוצות והתקנה ידנית.
+**נתקעתם?** [`GUIDE.html`](GUIDE.html) מפורט יותר, כולל תקלות נפוצות והרצה מקומית.
+כדי לקרוא אותו: לוחצים עליו כאן, ואז על **Download raw file**.
 
 ---
 
