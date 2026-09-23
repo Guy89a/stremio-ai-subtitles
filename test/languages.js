@@ -243,7 +243,7 @@ async function main() {
   // 6g. and Hebrew still comes back marked right-to-left
   const he2 = await realFetch(sHe.subtitles[0].url);
   const heBody = await he2.text();
-  assert.ok(/[֐-׿]/.test(heBody), 'Hebrew link returns Hebrew');
+  assert.ok(/[\u0590-\u05FF]/.test(heBody), 'Hebrew link returns Hebrew');
   assert.ok(heBody.includes(srt.RLE), 'and it is still wrapped right-to-left');
   console.log('✓ Spanish returns plain LTR lines, Hebrew keeps its RTL marks — same timings');
 

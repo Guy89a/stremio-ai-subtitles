@@ -300,7 +300,7 @@ function markDirection(line, lang) {
 // Hebrew was the first target and the tests are written against it; this is
 // the same call with Hebrew already filled in.
 function rtl(line) {
-  if (!line || !/[֐-׿]/.test(line)) return line;
+  if (!line || !/[\u0590-\u05FF]/.test(line)) return line;
   return RLE + line.replace(BIDI_MARKS, '') + PDF;
 }
 

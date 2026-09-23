@@ -132,7 +132,7 @@ async function main() {
 
   const verbalIdx = [0, 1, 3, 4, 5, 7];   // 2 is music, 6 is a sound description
   for (const i of verbalIdx) {
-    assert.ok(/[֐-׿]/.test(out[i].lines.join(' ')), `cue ${i + 1} not in Hebrew`);
+    assert.ok(/[\u0590-\u05FF]/.test(out[i].lines.join(' ')), `cue ${i + 1} not in Hebrew`);
   }
   console.log('✓ all 6 spoken cues came back in Hebrew, none dropped or merged');
 
@@ -197,7 +197,7 @@ async function main() {
     kept.map((c) => [c.start, c.end]),
     'every surviving cue keeps the timing of its English source'
   );
-  assert.ok(/[֐-׿]/.test(srtBody), 'served file contains Hebrew');
+  assert.ok(/[\u0590-\u05FF]/.test(srtBody), 'served file contains Hebrew');
   console.log('✓ served .srt matches the English timings cue for cue');
 
   // cache hit on the second request

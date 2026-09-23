@@ -145,7 +145,7 @@ async function main() {
 
   const line2 = out[1].lines.join(' ');
   assert.ok(!/English line/.test(line2), 'the line must NOT be left in English');
-  assert.ok(/[֐-׿]/.test(line2), 'the Hebrew is kept');
+  assert.ok(/[\u0590-\u05FF]/.test(line2), 'the Hebrew is kept');
   assert.ok(srt.hasForeignScript(line2), 'and yes - the stray word rides along, by choice');
   console.log('✓ after a failed retry the Hebrew is kept, foreign word and all');
 

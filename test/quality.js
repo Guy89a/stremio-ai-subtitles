@@ -82,7 +82,7 @@ async function main() {
 
   const joined = out.map((c) => c.lines.join(' ')).join('\n');
   assert.ok(!srt.hasForeignScript(joined), 'NO Arabic may survive into the finished subtitles');
-  assert.ok(/[֐-׿]/.test(out[1].lines.join('')), 'line 2 must still end up translated');
+  assert.ok(/[\u0590-\u05FF]/.test(out[1].lines.join('')), 'line 2 must still end up translated');
   console.log('✓ a line that came back with Arabic is re-asked and lands clean');
 
   assert.ok(prompts.length >= 2, 'a retry should have been issued');

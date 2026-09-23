@@ -175,7 +175,7 @@ async function main() {
   // 6c. the link the server issued does work
   const good = await realFetch(subs.subtitles[0].url);
   assert.strictEqual(good.status, 200, 'the issued link must still work');
-  assert.ok(/[֐-׿]/.test(await good.text()), 'and must return Hebrew');
+  assert.ok(/[\u0590-\u05FF]/.test(await good.text()), 'and must return Hebrew');
   console.log('✓ the link the server issued itself still works end to end');
 
   // 6d. no HTML injection from a forwarded host header
