@@ -164,6 +164,7 @@ before you recommend it to anyone.
 | **Context** | Chunks of 80 lines, with 12 neighbouring lines on each side as read-only context |
 | **Direction** | Lines in a right-to-left language are wrapped in explicit RTL marks, so a full stop cannot jump to the start of the sentence |
 | **Gender** | Dedicated guidance to decide who is being addressed and stay consistent, plus an optional evidence track in a language that marks it |
+| **Names** | Every recurring proper name is settled once, before translation, so "Billy the Kid" stays one name and nobody is spelled two ways |
 | **Speakers** | Detects an SDH track automatically and extracts who says each line — and from that, who is being addressed |
 | **Cleanup** | Sound descriptions ("door creaks", "siren") are removed, and cues that were only a description disappear from the file |
 | **Resilience** | Retries with growing backoff, automatic fallback to a second model, and bisection of chunks the content filter blocks |
@@ -182,6 +183,10 @@ in the house.
 
 It can take a few minutes if Google limits the rate (error 429) or the model is busy (503).
 The addon waits and tries again by itself. The log shows what is happening.
+
+Flash has a smaller free daily quota than Flash-Lite. When it runs out, the addon moves to
+Flash-Lite straight away, without waiting, and stays there for an hour. You can see your
+current limits on the [rate-limit page in AI Studio](https://aistudio.google.com/rate-limit?timeRange=last-28-days).
 
 Two settings change the time. Speaker names from an SDH track add about **8%**, and they
 work on their own. `REFERENCE_LANG` adds about **a third**. Start without a reference track.
@@ -204,14 +209,15 @@ Environment variables. All optional except the key.
 | `GEMINI_API_KEY` | — | Your key. Empty means public mode, where each visitor configures their own on the front page |
 | `SECRET` | generated | Encrypts a user's key into their personal install address. **Do not change after deploying** |
 | `TARGET_LANG` | `heb` | Default target language. Any code from the table |
-| `GEMINI_MODEL` | `gemini-flash-lite-latest` | Comma-separated list allowed; the first that answers wins |
-| `GEMINI_FALLBACK` | — | An extra model to fall back to when the first is overloaded |
+| `GEMINI_MODEL` | `gemini-flash-latest` | The model that translates. Flash chooses words better than Flash-Lite |
+| `GEMINI_FALLBACK` | `gemini-flash-lite-latest` | Used when the main model is busy or its free daily quota runs out. Empty = no fallback |
 | `CHUNK_SIZE` | `80` | Lines per request. Larger gives better context, but is blocked more often |
 | `CONCURRENCY` | `1` | Requests at the same time. **Do not raise it.** This is what uses up the per-minute quota |
 | `MIN_SPLIT` | `2` | How far to keep splitting a blocked chunk. Lower leaves less English, but is slower |
 | `REFERENCE_LANG` | — | A second track in a language that marks gender, used as evidence |
 | `FILL_FOREIGN_GAPS` | `1` | Fold in lines the English track skipped. Requires `REFERENCE_LANG` |
 | `KEEP_SOUND_CUES` | — | `1` to keep sound descriptions instead of removing them |
+| `NAME_GLOSSARY` | `1` | Settle proper names in one request before translating. `0` turns it off |
 | `MAX_SOURCES` | `2` | English sources translated per episode. `1` halves quota use |
 | `RATE_LIMIT_PER_DAY` | `40` | New episodes per day per caller |
 | `RATE_LIMIT_TOTAL` | `200` | Daily ceiling for the whole service |

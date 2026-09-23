@@ -2,10 +2,12 @@
 
 const { cueToSource, isNonVerbal, wrap, markDirection, hasForeignScriptFor, splitSdh } = require('./srt');
 const langs = require('./languages');
+const { extractNames, glossaryPrompt } = require('./names');
 
-// GEMINI_MODEL may be a comma-separated list: the first that answers wins, and
-// the rest act as fallbacks when a model is overloaded (503) or rate-limited.
-const MODELS = (process.env.GEMINI_MODEL || 'gemini-flash-lite-latest')
+// Flash by default: it chooses words noticeably better than Flash-Lite. When
+// its free daily quota runs out, gemini-fetch.js moves to Flash-Lite on its
+// own (GEMINI_FALLBACK). GEMINI_MODEL may also be a comma-separated list.
+const MODELS = (process.env.GEMINI_MODEL || 'gemini-flash-latest')
   .split(',')
   .map((s) => s.trim())
   .filter(Boolean);
@@ -82,6 +84,7 @@ RULES:
 - Keep the register and tone of each speaker: slang stays slang, formal stays formal, rudeness stays rude.
 - Keep a leading "- " dialogue dash when the source line has one (two speakers in one line keep both dashes).
 - Keep ♪ around song/music lines; keep proper names, brands and numbers as-is unless a {LANG} form is standard.
+- A name followed by "the" and a word is ONE name, not a name plus a noun: Billy the Kid, Jack the Ripper, Ivan the Terrible. Never translate the second part as an ordinary word.
 - Sound descriptions such as [door creaks] have already been removed before you see the text; do not invent any.
 - Do not add explanations, notes, transliterations or quotation marks that are not in the source.
 - Never output English text except for names/brands that stay in Latin script.
@@ -89,6 +92,8 @@ RULES:
 - CONTEXT lines are for understanding only. Do not return them.`;
 
 const STRIP_SOUND = process.env.KEEP_SOUND_CUES !== '1';
+// One extra request per episode that fixes every proper name in advance.
+const NAMES_PASS = process.env.NAME_GLOSSARY !== '0';
 
 // Added only when the source track actually names its speakers. Worth far
 // more in a language that marks the addressee's gender, so the last line is
@@ -117,7 +122,7 @@ A SECOND TRANSLATION IS PROVIDED:
 - Translate the ENGLISH line. The reference is evidence about meaning, never the text to translate. Where the two disagree on wording, the English wins; where they disagree on who is being addressed, the reference wins.
 - Where the English line is missing or empty but the reference is not, the English track simply did not translate that moment. Translate it from the reference.`;
 
-function buildPrompt(chunk, before, after, lang) {
+function buildPrompt(chunk, before, after, lang, glossary) {
   const fmt = (arr) =>
     arr
       .map((c) => {
@@ -127,13 +132,19 @@ function buildPrompt(chunk, before, after, lang) {
       })
       .join('\n');
   let p = '';
+  if (glossary && glossary.size) {
+    // Decided once for the whole episode, so every chunk spells a name the
+    // same way and no epithet gets translated as an ordinary word.
+    const rows = [...glossary].map(([en, t]) => `${en} = ${t}`).join('\n');
+    p += `NAMES — use exactly these forms, every time:\n${rows}\n\n`;
+  }
   if (before.length) p += `CONTEXT BEFORE (do not translate):\n${fmt(before)}\n\n`;
   p += `TRANSLATE (return exactly these ${chunk.length} numbered lines, in ${lang.name}):\n${fmt(chunk)}\n`;
   if (after.length) p += `\nCONTEXT AFTER (do not translate):\n${fmt(after)}\n`;
   return p;
 }
 
-async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES, log, withRef = false, withSpk = false, lang } = {}) {
+async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES, log, withRef = false, withSpk = false, lang, schema } = {}) {
   const body = {
     systemInstruction: { parts: [{ text: systemPrompt(lang) + (withRef ? REF_RULES : '') + (withSpk ? sdhRules(lang) : '') }] },
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -141,7 +152,7 @@ async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES
       temperature,
       maxOutputTokens: 32768,
       responseMimeType: 'application/json',
-      responseSchema: {
+      responseSchema: schema || {
         type: 'ARRAY',
         items: {
           type: 'OBJECT',
@@ -207,7 +218,7 @@ async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES
   throw lastErr;
 }
 
-async function translateChunk(apiKey, chunk, before, after, log, lang) {
+async function translateChunk(apiKey, chunk, before, after, log, lang, glossary) {
   const want = new Set(chunk.map((c) => c.n));
   const out = new Map();
   const withRef = chunk.some((c) => c.ref) || before.some((c) => c.ref) || after.some((c) => c.ref);
@@ -229,7 +240,7 @@ async function translateChunk(apiKey, chunk, before, after, log, lang) {
     }
   };
 
-  absorb(await callGemini(apiKey, buildPrompt(chunk, before, after, lang), { log, withRef, withSpk, lang }), true);
+  absorb(await callGemini(apiKey, buildPrompt(chunk, before, after, lang, glossary), { log, withRef, withSpk, lang }), true);
 
   // Retry whatever came back missing or in the wrong script, once.
   const missing = chunk.filter((c) => !out.has(c.n));
@@ -248,7 +259,7 @@ async function translateChunk(apiKey, chunk, before, after, log, lang) {
     absorb(
       await callGemini(
         apiKey,
-        buildPrompt(missing, before.concat(chunk.slice(0, 6)), after, lang) + note,
+        buildPrompt(missing, before.concat(chunk.slice(0, 6)), after, lang, glossary) + note,
         { temperature: 0.1, log, withRef, withSpk, lang }
       ),
       false // take what we get this time
@@ -270,9 +281,9 @@ async function translateChunk(apiKey, chunk, before, after, log, lang) {
 // stretch that actually trips the filter ends up staying in English.
 const MIN_SPLIT = parseInt(process.env.MIN_SPLIT || '8', 10);
 
-async function bisect(apiKey, chunk, before, after, log, label, lang) {
+async function bisect(apiKey, chunk, before, after, log, label, lang, glossary) {
   try {
-    return await translateChunk(apiKey, chunk, before, after, log, lang);
+    return await translateChunk(apiKey, chunk, before, after, log, lang, glossary);
   } catch (e) {
     if (chunk.length <= MIN_SPLIT) {
       log(`  ! ${label}: ${chunk.length} lines could not be translated - left in English`);
@@ -282,11 +293,62 @@ async function bisect(apiKey, chunk, before, after, log, label, lang) {
     const a = chunk.slice(0, mid);
     const b = chunk.slice(mid);
     log(`  > ${label} failed (${e.message.slice(0, 50)}) - splitting ${chunk.length} into ${a.length}+${b.length}`);
-    const ra = await bisect(apiKey, a, before, b.slice(0, CONTEXT).concat(after), log, label + '.1', lang);
-    const rb = await bisect(apiKey, b, before.concat(a.slice(-CONTEXT)), after, log, label + '.2', lang);
+    const ra = await bisect(apiKey, a, before, b.slice(0, CONTEXT).concat(after), log, label + '.1', lang, glossary);
+    const rb = await bisect(apiKey, b, before.concat(a.slice(-CONTEXT)), after, log, label + '.2', lang, glossary);
     const out = new Map(ra);
     for (const [k, v] of rb) out.set(k, v);
     return out;
+  }
+}
+
+/**
+ * Decide how every recurring proper name is written, in one request.
+ *
+ * Cheap next to the translation itself - one call against eight or more - and
+ * it removes a class of mistake rather than correcting it afterwards. A
+ * failure here is not fatal: translation continues without a glossary.
+ *
+ * @returns {Promise<Map<string,string>>} English name -> target-language form
+ */
+async function buildGlossary(apiKey, lines, lang, log) {
+  const names = extractNames(lines);
+  if (!names.length) return new Map();
+
+  try {
+    const answer = await callGemini(apiKey, glossaryPrompt(names, lang), {
+      temperature: 0,
+      retries: 2,          // if names are hard to get, the episode still matters more
+      log,
+      lang,
+      schema: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: { en: { type: 'STRING' }, t: { type: 'STRING' } },
+          required: ['en', 't'],
+        },
+      },
+    });
+
+    const wanted = new Set(names.map((n) => n.name));
+    const out = new Map();
+    for (const row of Array.isArray(answer) ? answer : []) {
+      const en = String(row?.en || '').trim();
+      const t = String(row?.t || '').trim();
+      // Only names we actually asked about, and only a real answer: a form
+      // identical to the English is meaningful for a Latin-script language
+      // and meaningless for one that uses another alphabet.
+      if (!wanted.has(en) || !t) continue;
+      if (/^skip$/i.test(t)) continue; // the model says it is not a name
+      if (t === en && lang.script !== 'latin') continue;
+      out.set(en, t);
+    }
+    log(`names: ${out.size}/${names.length} fixed for the whole episode`);
+    if (out.size) log(`names: ${[...out].map(([en, t]) => `${en} = ${t}`).join(' · ')}`);
+    return out;
+  } catch (e) {
+    log(`names: could not be decided (${e.message.slice(0, 60)}) - continuing without`);
+    return new Map();
   }
 }
 
@@ -341,6 +403,11 @@ async function translateCues(cues, apiKey, onLog, refs, speakers, langCode) {
   const withRefCount = verbal.filter((it) => it.ref).length;
   if (withRefCount) log(`reference track covers ${withRefCount}/${verbal.length} lines`);
 
+  // Names are settled before any chunk is sent, so all of them agree.
+  const glossary = NAMES_PASS
+    ? await buildGlossary(apiKey, verbal.map((it) => it.text), lang, log)
+    : new Map();
+
   const chunks = [];
   for (let i = 0; i < verbal.length; i += CHUNK) chunks.push(verbal.slice(i, i + CHUNK));
   log(`translating ${verbal.length} lines into ${lang.name} in ${chunks.length} chunk(s) with ${MODEL}`);
@@ -350,7 +417,7 @@ async function translateCues(cues, apiKey, onLog, refs, speakers, langCode) {
     const before = verbal.slice(Math.max(0, startIdx - CONTEXT), startIdx);
     const after = verbal.slice(startIdx + chunk.length, startIdx + chunk.length + CONTEXT);
     log(`  → chunk ${ci + 1}/${chunks.length} (lines ${chunk[0].n}–${chunk[chunk.length - 1].n})`);
-    return bisect(apiKey, chunk, before, after, log, 'chunk ' + (ci + 1), lang);
+    return bisect(apiKey, chunk, before, after, log, 'chunk ' + (ci + 1), lang, glossary);
   });
 
   const maps = await pool(tasks, CONCURRENCY);
@@ -375,4 +442,4 @@ async function translateCues(cues, apiKey, onLog, refs, speakers, langCode) {
   return result;
 }
 
-module.exports = { translateCues, systemPrompt, MODEL };
+module.exports = { translateCues, systemPrompt, buildGlossary, MODEL };

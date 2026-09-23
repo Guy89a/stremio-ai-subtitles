@@ -1,5 +1,9 @@
 'use strict';
 
+// The names pass adds one request per episode; it has its own suite
+// (test/names.js). Off here so these checks stay about their own subject.
+process.env.NAME_GLOSSARY = '0';
+
 // Every check here corresponds to a hole that was open in 1.4.0 and was
 // confirmed by running an exploit against it. They exist so the fixes cannot
 // be quietly undone later.

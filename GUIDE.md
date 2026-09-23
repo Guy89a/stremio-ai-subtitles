@@ -195,6 +195,12 @@ That is Google, not you. 429 is the per-minute request limit. 503 means the mode
 The addon waits, tries again, and switches to a backup model if it needs to. There is
 nothing to do except wait.
 
+### The log says "daily quota used up"
+
+The main model, Flash, has a smaller free daily quota than Flash-Lite. When it runs out the
+addon switches to Flash-Lite by itself and keeps translating. Nothing to do. Flash comes
+back once Google resets the quota.
+
 ### The log shows 404 on the model
 
 Google retired the model. This happens from time to time. On the service page on Render,
@@ -206,6 +212,13 @@ enter a current model from the list at
 
 The free plan has no permanent disk, so the cache is cleared when the service sleeps or
 restarts. The ping in step 5 keeps it through the evening, which is the case that matters.
+
+### A name is translated as an ordinary word
+
+This is what the names pass is for. Before translating, the addon collects the proper
+names in the episode and asks once how to write each one, so "Billy the Kid" is treated as
+a single name instead of a name plus a word. It is on by default. If you ever want it off,
+set `NAME_GLOSSARY` to `0`.
 
 ### Two identical languages in the subtitle menu
 
@@ -228,6 +241,7 @@ On the service page on Render, under **Environment**. Changing one redeploys aut
 | `MAX_SOURCES` | `2` | English sources per episode. `1` halves quota use |
 | `REFERENCE_LANG` | empty | A second track in a language that marks gender, for example `spa`. Improves gender, adds about a third to the time |
 | `KEEP_SOUND_CUES` | empty | `1` to keep sound descriptions instead of removing them |
+| `NAME_GLOSSARY` | `1` | Decides every recurring name once, before translating, so they stay consistent. `0` turns it off |
 | `RATE_LIMIT_PER_DAY` | `40` | New episodes per day per caller |
 | `RATE_LIMIT_TOTAL` | `200` | Daily limit for the whole service. This is what protects your quota |
 | `MAX_JOBS` | `3` | Translations running at once |

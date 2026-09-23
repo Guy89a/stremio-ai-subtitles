@@ -1,5 +1,9 @@
 'use strict';
 
+// The names pass adds one request per episode; it has its own suite
+// (test/names.js). Off here so these checks stay about their own subject.
+process.env.NAME_GLOSSARY = '0';
+
 // Stub addons run on 127.0.0.1; the server refuses private addresses otherwise.
 process.env.ALLOW_PRIVATE_SOURCES = '1';
 // Reference-track alignment, and the rule that a foreign word beats English.
