@@ -179,6 +179,63 @@ async function main() {
   assert.strictEqual(out2.length, cues.length, 'and translation still works without it');
   console.log('✓ NAME_GLOSSARY=0 skips the pass, and translation is unaffected');
 
+  // ---- a settled form never carries the model's own quote marks ---------
+  // Arabic came back as "بيلي ذا كيد" in a real run. The straight quote then
+  // travelled into every chunk prompt, the model echoed it into its JSON
+  // string without escaping it, and eight lines ended at that quote.
+  const { unquote, looksTruncated } = require('../src/translate');
+  const quoted = [
+    ['"بيلي ذا كيد"', 'بيلي ذا كيد'],
+    ['السيدة "ألفاريز"', 'السيدة ألفاريز'],
+    ['«ماريا»', 'ماريا'],
+    ['“Billy the Kid”', 'Billy the Kid'],
+    ['「ロウ刑事」', 'ロウ刑事'],
+    ["'Billy el Niño'", 'Billy el Niño'],
+  ];
+  for (const [raw, want] of quoted) {
+    assert.strictEqual(unquote(raw), want, `unquote(${raw})`);
+  }
+  console.log('✓ quote marks are stripped off every settled name form');
+
+  // A quote inside a word is spelling, not decoration: ד"ר is how Hebrew
+  // writes "Dr.", and that run showed it surviving translation untouched.
+  for (const keep of ['ד"ר צ\'ן', 'רו"ח לוי', "O'Brien"]) {
+    assert.strictEqual(unquote(keep), keep, `unquote must leave ${keep} alone`);
+  }
+  assert.ok(!unquote('السيدة "ألفاريز"').includes('"'),
+    'no straight quote may reach a chunk prompt');
+  console.log('✓ a quote inside a word is left alone (ד"ר, O\'Brien)');
+
+  // ---- a line cut short is caught and sent back -------------------------
+  const ara = langs.get('ara');
+  const jpn = langs.get('jpn');
+  const cutShort = [
+    ['Dr. Chen says the results are fine, Maria.', 'دكتور', ara],
+    ['Maria, you can\'t keep putting this off.', 'يا', ara],
+    ['Detective Rowe left his card on the table.', 'المحقق', ara],
+  ];
+  for (const [en, got, lg] of cutShort) {
+    assert.ok(looksTruncated(en, got, lg), `should have caught "${got}" as cut short`);
+  }
+  // Whole translations from that same run, none of which may be flagged.
+  const whole = [
+    ['Dr. Chen called again about the results.', 'اتصلت دكتور تشن ثانيةً بشأن النتائج.', ara],
+    ['That\'s easy for you to say.', 'קל לך להגיד.', langs.get('heb')],
+    ['Detective Rowe left his card on the table.', 'El detective Rowe dejó su tarjeta en la mesa.', langs.get('spa')],
+  ];
+  for (const [en, got, lg] of whole) {
+    assert.ok(!looksTruncated(en, got, lg), `a full translation was flagged: "${got}"`);
+  }
+  // Japanese is genuinely a third of the length; the bar has to move with it.
+  assert.ok(!looksTruncated('It\'s a piece of cake, right?', '朝飯前だろ？', jpn),
+    'dense scripts are short by nature, not truncated');
+  assert.ok(!looksTruncated('Gentlemen, we\'re closing in ten minutes.', '皆さん 閉店は１０分後です', jpn));
+  assert.ok(looksTruncated('Dr. Chen says the results are fine, Maria.', '検査', jpn),
+    'but a Japanese line CAN be cut short too');
+  // Short sources vary too much to judge, so they are never flagged.
+  assert.ok(!looksTruncated('Sit down.', 'שב.', langs.get('heb')));
+  console.log('✓ cut-short lines are caught, in dense scripts too, without false alarms');
+
   console.log('\nall name checks passed');
   process.exit(0);
 }

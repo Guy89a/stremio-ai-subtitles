@@ -87,6 +87,7 @@ RULES:
 - A name followed by "the" and a word is ONE name, not a name plus a noun: Billy the Kid, Jack the Ripper, Ivan the Terrible. Never translate the second part as an ordinary word.
 - Sound descriptions such as [door creaks] have already been removed before you see the text; do not invent any.
 - Do not add explanations, notes, transliterations or quotation marks that are not in the source.
+- NEVER write the straight " character. If the source quotes someone and {LANG} needs quotation marks, use the marks {LANG} itself uses.
 - Never output English text except for names/brands that stay in Latin script.
 - If a line has no translatable words (music notes, dashes only), return it unchanged.
 - CONTEXT lines are for understanding only. Do not return them.`;
@@ -218,8 +219,21 @@ async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES
   throw lastErr;
 }
 
+// A line that comes back a fraction of the length of its source has almost
+// always been cut short rather than translated tersely - a quote closing the
+// JSON string early is the usual cause. Dense writing systems are genuinely
+// much shorter than English, so the bar moves with the script; very short
+// sources vary too much to judge at all.
+function looksTruncated(src, out, lang) {
+  const a = String(src || '').replace(/\s+/g, ' ').trim();
+  const b = String(out || '').replace(/\s+/g, ' ').trim();
+  if (a.length < 25) return false;
+  return b.length / a.length < (lang.maxLine <= 20 ? 0.15 : 0.4);
+}
+
 async function translateChunk(apiKey, chunk, before, after, log, lang, glossary) {
   const want = new Set(chunk.map((c) => c.n));
+  const srcOf = new Map(chunk.map((c) => [c.n, c.text || c.ref || '']));
   const out = new Map();
   const withRef = chunk.some((c) => c.ref) || before.some((c) => c.ref) || after.some((c) => c.ref);
   const withSpk = chunk.some((c) => c.speaker) || before.some((c) => c.speaker);
@@ -228,6 +242,9 @@ async function translateChunk(apiKey, chunk, before, after, log, lang, glossary)
   // thrown away: we ask for them again, but if the second try is no better
   // we still prefer a slightly-contaminated translation over an English line.
   const quarantine = new Map();
+  // Lines held aside because they came back cut short, tracked apart from the
+  // wrong-script ones so the retry can say which fault it is asking about.
+  const cut = new Set();
 
   const absorb = (arr, strict) => {
     if (!Array.isArray(arr)) return;
@@ -236,6 +253,11 @@ async function translateChunk(apiKey, chunk, before, after, log, lang, glossary)
       const he = typeof item?.he === 'string' ? item.he.trim() : '';
       if (!want.has(n) || !he || out.has(n)) continue;
       if (strict && hasForeignScriptFor(he, lang.code)) { quarantine.set(n, he); continue; }
+      if (strict && looksTruncated(srcOf.get(n), he, lang)) {
+        quarantine.set(n, he);
+        cut.add(n);
+        continue;
+      }
       out.set(n, he);
     }
   };
@@ -245,17 +267,19 @@ async function translateChunk(apiKey, chunk, before, after, log, lang, glossary)
   // Retry whatever came back missing or in the wrong script, once.
   const missing = chunk.filter((c) => !out.has(c.n));
   if (missing.length) {
-    const bad = quarantine.size;
-    log(`  ↻ ${missing.length} lines to redo${bad ? ` (${bad} had the wrong script)` : ''}`);
+    const bad = quarantine.size - cut.size;
+    const why = [bad ? `${bad} had the wrong script` : '', cut.size ? `${cut.size} came back cut short` : '']
+      .filter(Boolean).join(', ');
+    log(`  ↻ ${missing.length} lines to redo${why ? ` (${why})` : ''}`);
     // Naming the script that came back is worth more than a generic scolding.
     const strayNames = [...new Set(
-      [...quarantine.values()]
+      [...quarantine].filter(([n]) => !cut.has(n)).map(([, t]) => t)
         .flatMap((t) => langs.scriptsIn(t))
         .filter((n) => n !== 'Latin' && n !== langs.get(lang.code).name)
     )];
-    const note = bad
-      ? `\nThe previous attempt returned ${strayNames.join(' and ') || 'foreign-script'} characters. Write in ${lang.name} only this time.\n`
-      : '';
+    const note =
+      (bad ? `\nThe previous attempt returned ${strayNames.join(' and ') || 'foreign-script'} characters. Write in ${lang.name} only this time.\n` : '') +
+      (cut.size ? `\nThe previous attempt cut some of these lines off partway. Translate each one in full, to the end of the sentence, and do not use the straight " character anywhere.\n` : '');
     absorb(
       await callGemini(
         apiKey,
@@ -268,10 +292,14 @@ async function translateChunk(apiKey, chunk, before, after, log, lang, glossary)
 
   // Anything still unanswered falls back to the quarantined attempt.
   let salvaged = 0;
+  let short = 0;
   for (const [n, he] of quarantine) {
-    if (!out.has(n)) { out.set(n, he); salvaged++; }
+    if (out.has(n)) continue;
+    out.set(n, he);
+    if (cut.has(n)) short++; else salvaged++;
   }
   if (salvaged) log(`  ~ ${salvaged} line(s) kept with a foreign word rather than left in English`);
+  if (short) log(`  ~ ${short} line(s) kept although they look cut short`);
 
   return out;
 }
@@ -299,6 +327,34 @@ async function bisect(apiKey, chunk, before, after, log, label, lang, glossary) 
     for (const [k, v] of rb) out.set(k, v);
     return out;
   }
+}
+
+// A model often hands its answer back wrapped in quotes: "بيلي ذا كيد". The
+// quotes are not part of the name, and letting them through is worse than
+// untidy: the form goes into the prompt of every chunk that mentions the
+// name, the model echoes the straight " into its JSON string, and a weaker
+// model does not always escape it. The string then ends at that quote and
+// the rest of the line is lost.
+const QUOTE_PAIRS = [
+  ['"', '"'], ["'", "'"], ['«', '»'], ['“', '”'],
+  ['‘', '’'], ['„', '“'], ['「', '」'],
+];
+
+function unquote(s) {
+  let t = String(s || '').trim();
+  for (let i = 0; i < 3; i++) {
+    const pair = QUOTE_PAIRS.find(([a, b]) => t.length > a.length + b.length && t.startsWith(a) && t.endsWith(b));
+    if (!pair) break;
+    t = t.slice(pair[0].length, -pair[1].length).trim();
+  }
+  // Quotes left around a part of the name are decoration too. A quote sitting
+  // inside a word is left alone: in Hebrew and Arabic it is a letter's worth
+  // of the spelling, as in ד"ר.
+  return t
+    .replace(/(^|\s)["'«»“”‘’「」]+/g, '$1')
+    .replace(/["«»“”‘’「」]+(?=\s|$)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -334,7 +390,7 @@ async function buildGlossary(apiKey, lines, lang, log) {
     const out = new Map();
     for (const row of Array.isArray(answer) ? answer : []) {
       const en = String(row?.en || '').trim();
-      const t = String(row?.t || '').trim();
+      const t = unquote(row?.t);
       // Only names we actually asked about, and only a real answer: a form
       // identical to the English is meaningful for a Latin-script language
       // and meaningless for one that uses another alphabet.
@@ -442,4 +498,4 @@ async function translateCues(cues, apiKey, onLog, refs, speakers, langCode) {
   return result;
 }
 
-module.exports = { translateCues, systemPrompt, buildGlossary, MODEL };
+module.exports = { translateCues, systemPrompt, buildGlossary, unquote, looksTruncated, MODEL };
