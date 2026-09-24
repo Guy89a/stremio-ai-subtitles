@@ -143,7 +143,7 @@ async function main() {
   const chunkPrompts = prompts.filter((p) => !p.startsWith('These are the proper names'));
   assert.ok(chunkPrompts.length >= 3, 'the file should have split into several chunks');
   for (const p of chunkPrompts) {
-    assert.ok(/^NAMES — use exactly these forms/m.test(p), 'a chunk went out without the names');
+    assert.ok(/^NAMES — use these forms every time/m.test(p), 'a chunk went out without the names');
     assert.ok(p.includes('Billy the Kid = בילי דה קיד'), 'and without the settled form');
   }
   console.log(`✓ all ${chunkPrompts.length} chunks carried the same settled names`);
@@ -235,6 +235,33 @@ async function main() {
   // Short sources vary too much to judge, so they are never flagged.
   assert.ok(!looksTruncated('Sit down.', 'שב.', langs.get('heb')));
   console.log('✓ cut-short lines are caught, in dense scripts too, without false alarms');
+
+  // ---- a shout is not a name -------------------------------------------
+  // From a real western: "Hyah" was settled as a name, and every "Hyah!" came
+  // out in Hebrew as a word meaning "was".
+  {
+    const western = [
+      'Hyah!', 'Hyah! Hyah! Hyah!', 'Hee-yaw!', 'Hee-ya!', 'Whoa!',
+      'Garrett!', 'Garrett is coming for you.', 'Tell Garrett I said so.',
+    ];
+    const got = extractNames(western).map((n) => n.name);
+    for (const shout of ['Hyah', 'Hee', 'Whoa']) {
+      assert.ok(!got.includes(shout), `"${shout}" is a shout, not a name`);
+    }
+    assert.ok(got.includes('Garrett'), 'a name that is also shouted is still a name');
+    console.log('✓ a word only ever shouted ("Hyah!", "Hee-yaw!") is not a name; a shouted name still is');
+  }
+
+  // ---- a nickname made of ordinary words is translated --------------------
+  // From a real episode: "the House" (a trading firm) came out as האוס, a
+  // transliteration, where a subtitler would write הבית.
+  {
+    const { glossaryPrompt } = require('../src/names');
+    const p = glossaryPrompt([{ name: 'House', count: 6, sample: 'with Mr. Murphy and the House.' }], langs.get('heb'));
+    assert.ok(/the House[^\n]*TRANSLATED by meaning/.test(p), 'a common-word nickname must be translated');
+    assert.ok(/White Oaks stays White Oaks/.test(p), 'a real place keeps its name');
+    console.log('✓ nicknames made of ordinary words are translated; real places keep their names');
+  }
 
   console.log('\nall name checks passed');
   process.exit(0);

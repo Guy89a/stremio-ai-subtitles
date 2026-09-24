@@ -181,8 +181,9 @@ before you recommend it to anyone.
 wait less than that. After the first time the file is saved and loads at once for everyone
 in the house.
 
-It can take a few minutes if Google limits the rate (error 429) or the model is busy (503).
-The addon waits and tries again by itself. The log shows what is happening.
+It can take a few minutes if Google limits the rate (error 429). The addon waits and tries
+again by itself. If the model is busy (503), it moves to the backup model instead of waiting.
+The log shows what is happening.
 
 Flash has a smaller free daily quota than Flash-Lite. When it runs out, the addon moves to
 Flash-Lite straight away, without waiting, and stays there for an hour. You can see your

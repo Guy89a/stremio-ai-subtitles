@@ -192,8 +192,10 @@ key is not set.
 ### The log shows 429 or 503
 
 That is Google, not you. 429 is the per-minute request limit. 503 means the model is busy.
-The addon waits, tries again, and switches to a backup model if it needs to. There is
-nothing to do except wait.
+
+For 429, the addon waits and tries again. For 503, it tries twice, then moves to the backup
+model and stays there for five minutes. The log says `overloaded` when that happens. There
+is nothing to do except wait.
 
 ### The log says "daily quota used up"
 

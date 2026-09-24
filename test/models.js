@@ -110,6 +110,36 @@ async function main() {
     console.log('✓ a deployment already on Flash-Lite does not loop onto itself');
   }
 
+  // ---- 8. overload: two tries, then Flash-Lite, and Flash rests 5 minutes --
+  // A real episode spent 37 of its 44 minutes waiting out 503s on Flash, one
+  // full retry ladder per chunk, before each chunk moved to Flash-Lite anyway.
+  {
+    const BUSY = () => new Response('{"error":{"code":503,"status":"UNAVAILABLE"}}', { status: 503 });
+    const { calls, state: s } = fresh((u) => (u.includes('gemini-flash-latest:') ? BUSY() : GOOD('lite')));
+    const res = await global.fetch(URL_FLASH, BODY);
+    assert.strictEqual(res.status, 200, 'Flash-Lite must answer');
+    assert.deepStrictEqual(calls, ['gemini-flash-latest', 'gemini-flash-latest', 'gemini-flash-lite-latest'],
+      'two tries on an overloaded Flash, not six');
+    const rest = s.resting.get('gemini-flash-latest') - Date.now();
+    assert.ok(rest > 4 * 60000 && rest <= 5 * 60000, `Flash should rest about 5 minutes, got ${Math.round(rest / 1000)}s`);
+
+    calls.length = 0;
+    await global.fetch(URL_FLASH, BODY);
+    assert.deepStrictEqual(calls, ['gemini-flash-lite-latest'], 'the next chunk goes straight to Flash-Lite');
+    console.log('✓ an overloaded Flash hands over after two tries and rests for five minutes');
+  }
+
+  // ---- 9. overload with nowhere else to go: the full ladder still applies --
+  {
+    process.env.GEMINI_FALLBACK = '';
+    const { calls } = fresh((u, n) => (n < 4 ? new Response('{}', { status: 503 }) : GOOD('flash, eventually')));
+    const res = await global.fetch(URL_FLASH, BODY);
+    delete process.env.GEMINI_FALLBACK;
+    assert.strictEqual(res.status, 200, 'with no fallback, waiting it out must still work');
+    assert.strictEqual(calls.length, 4, 'three 503s, then the answer - no early give-up');
+    console.log('✓ with no fallback, an overload is still waited out in full');
+  }
+
   console.log('\nall model checks passed');
   process.exit(0);
 }

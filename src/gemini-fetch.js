@@ -15,6 +15,12 @@
 //
 // A model found out of daily quota is skipped for the next hour, so the rest
 // of the episode does not rediscover it on every chunk.
+//
+// Overload (503 and friends) is handled the same way, on a shorter clock.
+// When another model is there to take the call, a model that is overloaded
+// twice in a row is set aside for five minutes: waiting out a full retry
+// ladder on it cost about a minute per chunk, on every chunk. When there is
+// no other model, the full ladder still applies - waiting is all that is left.
 
 const RETRYABLE = [408, 429, 500, 502, 503, 504];
 const CATS = [
@@ -23,6 +29,8 @@ const CATS = [
 ];
 const LEVELS = ['OFF', 'BLOCK_NONE', 'BLOCK_ONLY_HIGH', null];
 const RESTING_MS = 60 * 60 * 1000;
+const OVERLOAD = [500, 502, 503, 504];
+const OVERLOAD_REST_MS = 5 * 60 * 1000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -35,6 +43,7 @@ function install(opts = {}) {
   const FB = (fbEnv === undefined ? 'gemini-flash-lite-latest' : fbEnv)
     .split(',').map((s) => s.trim()).filter(Boolean);
   const TRIES = parseInt(process.env.GEMINI_RETRIES || '6', 10);
+  const OVERLOAD_TRIES = Math.max(1, parseInt(process.env.GEMINI_OVERLOAD_TRIES || '2', 10));
 
   let lvl = 0;
   let noThink = process.env.GEMINI_NOTHINK !== '0';
@@ -133,6 +142,13 @@ function install(opts = {}) {
 
         last = res;
         if (RETRYABLE.indexOf(res.status) < 0) break;
+
+        // Overloaded, and another model can take it: stop queueing for this one.
+        if (t < order.length - 1 && OVERLOAD.indexOf(res.status) >= 0 && a + 1 >= OVERLOAD_TRIES) {
+          resting.set(order[t], Date.now() + OVERLOAD_REST_MS);
+          log(`   ${order[t]} overloaded (${res.status}) - using ${order[t + 1]} for the next 5 minutes`);
+          break;
+        }
         const m = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(txt);
         const hinted = m ? Math.ceil(parseFloat(m[1]) * 1000) : 0;
         const wait = Math.max(hinted, Math.min(60000, 2000 * 2 ** a + Math.random() * 1000));

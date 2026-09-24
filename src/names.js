@@ -32,7 +32,7 @@ listen look wait tell call come go stop hold give take let hear watch stay sit
 stand run move hurry help keep leave put bring try trust forget remember relax
 calm shut open close turn follow find ask answer check drop hang pick show wake
 stay mind careful easy fine good great sure nice cool wow damn hello goodbye
-bye morning evening night afternoon tonight today tomorrow yesterday so still
+bye certainly somebody whoa hyah yah hee haw yeehaw huh hmm aha ooh ahh morning evening night afternoon tonight today tomorrow yesterday so still
 even why whatever wherever however anyway alright guys man dude look sit`.split(/\s+/));
 
 const TITLES =
@@ -67,9 +67,17 @@ function extractNames(lines, { min = 2, max = 40 } = {}) {
   //   - it never appears in lower case anywhere in the episode.
   const midCaps = new Set();
   const lowerSeen = new Set();
+  // A word used only as a shout - "Hyah!", "Hee-yaw!" - is a call to a horse
+  // or a sound, not a name, however often it recurs. Seen in a real western:
+  // "Hyah" was settled as a name, and every "Hyah!" came out in Hebrew as a
+  // word meaning "was". So a single word needs at least one ordinary use.
+  const plainUse = new Set();
   for (const line of src) {
     for (const m of line.matchAll(/\b[A-Z][a-z]+\b/g)) {
-      if (!atSentenceStart(line, m.index)) midCaps.add(m[0]);
+      const start = atSentenceStart(line, m.index);
+      if (!start) midCaps.add(m[0]);
+      const next = line.slice(m.index + m[0].length);
+      if (!(start && /^\s*(?:[!\-–—]|\?!)/.test(next))) plainUse.add(m[0]);
     }
     for (const m of line.matchAll(/\b[a-z]+\b/g)) lowerSeen.add(m[0]);
   }
@@ -124,7 +132,7 @@ function extractNames(lines, { min = 2, max = 40 } = {}) {
     // 4. A single capitalised word, but only with evidence that it is a name.
     for (const m of line.matchAll(/\b[A-Z][a-z]{2,}\b/g)) {
       const w = m[0];
-      if (COMMON.has(w.toLowerCase()) || titleRe.test(w) || !nameLike(w)) continue;
+      if (COMMON.has(w.toLowerCase()) || titleRe.test(w) || !nameLike(w) || !plainUse.has(w)) continue;
       add(li, m.index, w);
     }
   });
@@ -159,10 +167,12 @@ For each one, give the exact form to use in ${lang.name}, and use it consistentl
 RULES:
 - A name with an epithet is ONE name. "Billy the Kid" is not Billy plus a word meaning a young goat; "Ivan the Terrible" is not Ivan plus an adjective. If the whole name has an established form in ${lang.name}, use that form. Otherwise transliterate the whole thing, epithet included.
 - Where a well-known person, place, or work already has a standard form in ${lang.name}, use the standard form rather than inventing one.
+- A nickname, company, gang or institution that is called by ordinary words - "the House", "the Company", "the Butcher Shop", "the Regulators" - is TRANSLATED by meaning, the way a human subtitler would, never transliterated. Give the plain form; the translator adds articles and prefixes as the grammar of each sentence needs.
+- A real place (a town, county, river, country) keeps its name, transliterated, even when its English words have a meaning: White Oaks stays White Oaks in ${lang.name} letters. Only ordinary words attached to it are translated: "Lincoln County" gives the ${lang.name} word for county plus Lincoln.
 - Otherwise transliterate by sound, in the ${lang.name} writing system.
 - Titles such as Doctor, Detective or Mrs. ARE translated; the name after them is not.
 - If ${lang.name} conventionally keeps foreign names in Latin letters, say so by returning the name unchanged.
-- If an entry is NOT actually a proper name - an ordinary word that only looks like one because it starts a sentence, such as "Listen" or "Call" - return it with the form SKIP. Forcing an ordinary word into one fixed form would break grammar elsewhere.
+- If an entry is NOT actually a proper name - an ordinary word that only looks like one because it starts a sentence, such as "Listen" or "Call", or a shout or sound such as "Hyah" or "Whoa" - return it with the form SKIP. Forcing an ordinary word into one fixed form would break grammar elsewhere.
 - Return every entry given, once each, and nothing else.
 
 NAMES:

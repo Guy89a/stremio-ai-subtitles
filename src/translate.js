@@ -22,6 +22,9 @@ const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 const CHUNK = parseInt(process.env.CHUNK_SIZE || '120', 10);
 const CONTEXT = parseInt(process.env.CONTEXT_CUES || '12', 10);
 const CONCURRENCY = parseInt(process.env.CONCURRENCY || '3', 10);
+// How many times a flawed or missing line is asked for again. Each round only
+// resends the lines that are still wrong, so a second round is usually tiny.
+const REDO_ROUNDS = parseInt(process.env.REDO_ROUNDS || '2', 10);
 
 // The instructions are assembled from what the target language actually
 // requires, not written out per language. Four properties decide it: the
@@ -137,7 +140,7 @@ function buildPrompt(chunk, before, after, lang, glossary) {
     // Decided once for the whole episode, so every chunk spells a name the
     // same way and no epithet gets translated as an ordinary word.
     const rows = [...glossary].map(([en, t]) => `${en} = ${t}`).join('\n');
-    p += `NAMES — use exactly these forms, every time:\n${rows}\n\n`;
+    p += `NAMES — use these forms every time. Add articles, prefixes or case endings as the sentence needs, but never change the name itself:\n${rows}\n\n`;
   }
   if (before.length) p += `CONTEXT BEFORE (do not translate):\n${fmt(before)}\n\n`;
   p += `TRANSLATE (return exactly these ${chunk.length} numbered lines, in ${lang.name}):\n${fmt(chunk)}\n`;
@@ -238,65 +241,62 @@ async function translateChunk(apiKey, chunk, before, after, log, lang, glossary)
   const withRef = chunk.some((c) => c.ref) || before.some((c) => c.ref) || after.some((c) => c.ref);
   const withSpk = chunk.some((c) => c.speaker) || before.some((c) => c.speaker);
 
-  // Lines that came back with Arabic in them are held aside rather than
-  // thrown away: we ask for them again, but if the second try is no better
-  // we still prefer a slightly-contaminated translation over an English line.
-  const quarantine = new Map();
-  // Lines held aside because they came back cut short, tracked apart from the
-  // wrong-script ones so the retry can say which fault it is asking about.
-  const cut = new Set();
+  // A line that comes back in the wrong script, or cut short, is held aside
+  // rather than thrown away. We ask for it again - and check the answer again,
+  // since a model that slipped once can slip twice. If every attempt is
+  // flawed, the last one is still kept: a line with one stray word is more
+  // use to the viewer than an English line.
+  const held = new Map(); // n -> { text, why: 'script' | 'cut' }
 
-  const absorb = (arr, strict) => {
+  const absorb = (arr) => {
     if (!Array.isArray(arr)) return;
     for (const item of arr) {
       const n = Number(item?.n);
       const he = typeof item?.he === 'string' ? item.he.trim() : '';
       if (!want.has(n) || !he || out.has(n)) continue;
-      if (strict && hasForeignScriptFor(he, lang.code)) { quarantine.set(n, he); continue; }
-      if (strict && looksTruncated(srcOf.get(n), he, lang)) {
-        quarantine.set(n, he);
-        cut.add(n);
-        continue;
-      }
+      if (hasForeignScriptFor(he, lang.code)) { held.set(n, { text: he, why: 'script' }); continue; }
+      if (looksTruncated(srcOf.get(n), he, lang)) { held.set(n, { text: he, why: 'cut' }); continue; }
       out.set(n, he);
     }
   };
 
-  absorb(await callGemini(apiKey, buildPrompt(chunk, before, after, lang, glossary), { log, withRef, withSpk, lang }), true);
+  absorb(await callGemini(apiKey, buildPrompt(chunk, before, after, lang, glossary), { log, withRef, withSpk, lang }));
 
-  // Retry whatever came back missing or in the wrong script, once.
-  const missing = chunk.filter((c) => !out.has(c.n));
-  if (missing.length) {
-    const bad = quarantine.size - cut.size;
-    const why = [bad ? `${bad} had the wrong script` : '', cut.size ? `${cut.size} came back cut short` : '']
+  for (let round = 1; round <= REDO_ROUNDS; round++) {
+    const missing = chunk.filter((c) => !out.has(c.n));
+    if (!missing.length) break;
+
+    const flawed = missing.map((c) => held.get(c.n)).filter(Boolean);
+    const bad = flawed.filter((h) => h.why === 'script');
+    const cut = flawed.filter((h) => h.why === 'cut');
+    const why = [bad.length ? `${bad.length} had the wrong script` : '', cut.length ? `${cut.length} came back cut short` : '']
       .filter(Boolean).join(', ');
-    log(`  ↻ ${missing.length} lines to redo${why ? ` (${why})` : ''}`);
+    log(`  ↻ ${missing.length} lines to redo${round > 1 ? ` (try ${round + 1})` : ''}${why ? ` (${why})` : ''}`);
+
     // Naming the script that came back is worth more than a generic scolding.
     const strayNames = [...new Set(
-      [...quarantine].filter(([n]) => !cut.has(n)).map(([, t]) => t)
-        .flatMap((t) => langs.scriptsIn(t))
+      bad.flatMap((h) => langs.scriptsIn(h.text))
         .filter((n) => n !== 'Latin' && n !== langs.get(lang.code).name)
     )];
     const note =
-      (bad ? `\nThe previous attempt returned ${strayNames.join(' and ') || 'foreign-script'} characters. Write in ${lang.name} only this time.\n` : '') +
-      (cut.size ? `\nThe previous attempt cut some of these lines off partway. Translate each one in full, to the end of the sentence, and do not use the straight " character anywhere.\n` : '');
+      (bad.length ? `\nThe previous attempt returned ${strayNames.join(' and ') || 'foreign-script'} characters. Write in ${lang.name} only this time.\n` : '') +
+      (cut.length ? `\nThe previous attempt cut some of these lines off partway. Translate each one in full, to the end of the sentence, and do not use the straight " character anywhere.\n` : '');
     absorb(
       await callGemini(
         apiKey,
         buildPrompt(missing, before.concat(chunk.slice(0, 6)), after, lang, glossary) + note,
-        { temperature: 0.1, log, withRef, withSpk, lang }
-      ),
-      false // take what we get this time
+        { temperature: round === 1 ? 0.1 : 0, log, withRef, withSpk, lang }
+      )
     );
   }
 
-  // Anything still unanswered falls back to the quarantined attempt.
+  // Anything still unanswered falls back to its last flawed attempt.
   let salvaged = 0;
   let short = 0;
-  for (const [n, he] of quarantine) {
+  for (const [n, h] of held) {
     if (out.has(n)) continue;
-    out.set(n, he);
-    if (cut.has(n)) short++; else salvaged++;
+    out.set(n, h.text);
+    if (h.why === 'cut') short++; else salvaged++;
   }
   if (salvaged) log(`  ~ ${salvaged} line(s) kept with a foreign word rather than left in English`);
   if (short) log(`  ~ ${short} line(s) kept although they look cut short`);
