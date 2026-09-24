@@ -165,7 +165,8 @@ function glossaryPrompt(names, lang) {
 For each one, give the exact form to use in ${lang.name}, and use it consistently everywhere.
 
 RULES:
-- A name with an epithet is ONE name. "Billy the Kid" is not Billy plus a word meaning a young goat; "Ivan the Terrible" is not Ivan plus an adjective. If the whole name has an established form in ${lang.name}, use that form. Otherwise transliterate the whole thing, epithet included.
+- A name with an epithet is ONE name, decided as a whole. The epithet is a title made of ordinary words, so it is TRANSLATED by what it means as a title - the way ${lang.name} history books and film titles do it: Billy the Kid is "Billy" plus the ${lang.name} word for a young man or lad (in Hebrew: בילי הנער), never a word for a young goat; Jack the Ripper and Ivan the Terrible likewise translate their epithets. If ${lang.name} conventionally keeps the whole name in English, keep it whole and unchanged.
+- NEVER mix the two: do not translate "the" and transliterate the rest (הקיד, הד קיד, el Kid). Either the whole epithet is translated, or the whole name stays as it is.
 - Where a well-known person, place, or work already has a standard form in ${lang.name}, use the standard form rather than inventing one.
 - A nickname, company, gang or institution that is called by ordinary words - "the House", "the Company", "the Butcher Shop", "the Regulators" - is TRANSLATED by meaning, the way a human subtitler would, never transliterated. Give the plain form; the translator adds articles and prefixes as the grammar of each sentence needs.
 - A real place (a town, county, river, country) keeps its name, transliterated, even when its English words have a meaning: White Oaks stays White Oaks in ${lang.name} letters. Only ordinary words attached to it are translated: "Lincoln County" gives the ${lang.name} word for county plus Lincoln.

@@ -87,7 +87,7 @@ RULES:
 - Keep the register and tone of each speaker: slang stays slang, formal stays formal, rudeness stays rude.
 - Keep a leading "- " dialogue dash when the source line has one (two speakers in one line keep both dashes).
 - Keep ♪ around song/music lines; keep proper names, brands and numbers as-is unless a {LANG} form is standard.
-- A name followed by "the" and a word is ONE name, not a name plus a noun: Billy the Kid, Jack the Ripper, Ivan the Terrible. Never translate the second part as an ordinary word.
+- A name followed by "the" and a word is ONE name, not a name plus a noun: Billy the Kid, Jack the Ripper, Ivan the Terrible. Its epithet is a title: never translate it as an ordinary noun in the sentence (Kid is not a young goat), and never half-translate it. Use the form given under NAMES.
 - Sound descriptions such as [door creaks] have already been removed before you see the text; do not invent any.
 - Do not add explanations, notes, transliterations or quotation marks that are not in the source.
 - NEVER write the straight " character. If the source quotes someone and {LANG} needs quotation marks, use the marks {LANG} itself uses.

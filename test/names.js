@@ -92,6 +92,19 @@ async function main() {
   }
   console.log('✓ every language is told that a name with an epithet is one name');
 
+  // From a real episode, on Flash-Lite: the old rule said "transliterate the
+  // epithet", a newer one said "translate ordinary words", and the model split
+  // the difference into בילי הקיד. One rule now, and a ban on mixing.
+  {
+    const { glossaryPrompt } = require('../src/names');
+    const g = glossaryPrompt([{ name: 'Billy the Kid', count: 11 }], langs.get('heb'));
+    assert.ok(/epithet[^\n]*TRANSLATED/.test(g), 'the epithet must be translated as a title');
+    assert.ok(/בילי הנער/.test(g), 'with the established Hebrew form as the example');
+    assert.ok(/NEVER mix/.test(g) && /הקיד/.test(g), 'and a half-translated form is named and forbidden');
+    assert.ok(!/transliterate the whole thing, epithet included/.test(g), 'the old contradictory rule is gone');
+    console.log('✓ an epithet is translated as a whole, never half-and-half (בילי הנער, not בילי הקיד)');
+  }
+
   // ---- 6. end to end: the glossary reaches every chunk ------------------
   process.env.CHUNK_SIZE = '4';   // force several chunks over a short file
   process.env.GEMINI_API_KEY = 'test-key';
@@ -115,7 +128,7 @@ async function main() {
       glossaryAsked++;
       const body = JSON.stringify({ candidates: [{ content: { parts: [{
         text: JSON.stringify([
-          { en: 'Billy the Kid', t: 'בילי דה קיד' },
+          { en: 'Billy the Kid', t: 'בילי הנער' },
           { en: 'Maria', t: 'מריה' },
           { en: 'Sarah', t: 'שרה' },
           { en: 'Detective Rowe', t: 'הבלש רואו' },
@@ -144,7 +157,7 @@ async function main() {
   assert.ok(chunkPrompts.length >= 3, 'the file should have split into several chunks');
   for (const p of chunkPrompts) {
     assert.ok(/^NAMES — use these forms every time/m.test(p), 'a chunk went out without the names');
-    assert.ok(p.includes('Billy the Kid = בילי דה קיד'), 'and without the settled form');
+    assert.ok(p.includes('Billy the Kid = בילי הנער'), 'and without the settled form');
   }
   console.log(`✓ all ${chunkPrompts.length} chunks carried the same settled names`);
 
