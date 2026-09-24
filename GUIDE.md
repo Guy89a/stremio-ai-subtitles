@@ -25,6 +25,8 @@ TV, computer.
 Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Sign in with a
 Google account and press **Create API key**. The default settings are fine.
 
+![The API Keys page in Google AI Studio, with the Create API key button at the top right](images/01-gemini-key.png)
+
 Copy the key somewhere temporary. You need it in the next step.
 
 The key looks like `AQ.xxxxx…` or `AIzaSy…`. Both are valid.
@@ -51,7 +53,9 @@ Three fields appear at the top:
 - **Blueprint Name** — **this field is empty and you must fill it in.** Any name works,
   for example `ai-subs`.
 - **Branch** — already says `main`. Leave it.
-- **Blueprint Path** — leave it empty.
+- **Blueprint Path** — leave it as it is. The grey `render.yaml` is just a hint.
+
+![The top of the Render form: Blueprint Name empty, Branch set to main, Blueprint Path showing a grey render.yaml hint](images/02-render-blueprint.png)
 
 Scroll down. Two fields matter:
 
@@ -59,6 +63,8 @@ Scroll down. Two fields matter:
 - `TARGET_LANG` — the language you want. Use a code from the
   [table in the README](README.md#languages), for example `spa` for Spanish. Leave it
   empty for Hebrew. You can use other languages later without deploying again.
+
+<img src="images/03-render-fields.png" width="640" alt="The two fields to fill in: GEMINI_API_KEY and TARGET_LANG">
 
 Press **Deploy Blueprint**. The build takes a minute or two.
 
@@ -82,11 +88,9 @@ Open that address in a browser with `/health` at the end:
 https://your-address.onrender.com/health
 ```
 
-You should get back something like:
+You should get back something like this:
 
-```json
-{"ok":true,"model":"…","key":true,"lang":"heb"}
-```
+<img src="images/04-health.png" width="380" alt="The /health page showing ok true, the model name, key true and lang heb">
 
 **`"key":true` is the important part.** It confirms the key was picked up. If it says
 `false`, open the service page on Render, go to the **Environment** tab, and check
@@ -104,12 +108,27 @@ https://your-address.onrender.com/spa/manifest.json     Spanish
 https://your-address.onrender.com/jpn/manifest.json     Japanese
 ```
 
-In the **Stremio** app: menu → **Addons** → paste the full address into the search box at
-the top → **Install**.
+**On a computer** — in the Stremio app, open **Addons** and press **+ Add addon**:
 
-> On Android there is no "Add addon" button. Paste the address into the search field
-> itself and the addon appears. If you install it in the desktop app with the same
-> account, it syncs to your phone and TV.
+![The Addons screen in Stremio, with the Add addon button marked](images/05a-stremio-addons.png)
+
+Paste the address into the field and press **Add**:
+
+<img src="images/05b-stremio-add-dialog.png" width="460" alt="The Add addon window with an empty field for the address">
+
+A window with the addon's name and description opens. Press **Install**:
+
+<img src="images/05c-stremio-install.png" width="520" alt="The install window for the addon, with the Install button">
+
+Pasting the address into the search box does not work in the desktop app. Use **Add addon**.
+
+**On a phone** — there is no Add addon button. Open **Addons**, paste the address into the
+search field, and the addon page opens. Press **Install**:
+
+<img src="images/05d-stremio-phone.png" width="300" alt="The addon page on a phone, with the Install button at the bottom">
+
+If you install it on one device, it syncs to every device signed in to the same Stremio
+account, including the TV.
 
 You can install several languages at the same time. Each one is a separate addon.
 
@@ -129,6 +148,8 @@ Sign up at [cron-job.org](https://cron-job.org) → **Create cronjob**:
 - **Schedule:** choose *Custom*, and in the minutes column select `0,10,20,30,40,50`.
   That is one ping every 10 minutes.
 - **Hours:** select all of them **except 4 and 5**.
+
+![The cron-job.org schedule: minutes 0, 10, 20…, all hours except 4 and 5, and the Crontab line](images/06-cron-schedule.png)
 
 The Crontab line at the bottom should read:
 
@@ -182,6 +203,9 @@ first episode after an update is translated again.
 ---
 
 ## When something does not work
+
+Several answers below mention the log. To see it, open your service on Render and choose
+**Logs** in the left menu. The newest lines are at the bottom.
 
 ### The language is not in the subtitle menu
 

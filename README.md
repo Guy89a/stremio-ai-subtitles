@@ -49,13 +49,13 @@ addon in another language:
 .../jpn/manifest.json     Japanese
 ```
 
-In Stremio: **Addons** → paste the full address into the search box → **Install**.
+In Stremio on a computer: **Addons** → **+ Add addon** → paste the full address → **Add** →
+**Install**. On a phone there is no Add addon button: paste the address into the search
+field on the **Addons** screen instead. Installing on one device syncs it to every device
+on the same account, including the TV.
+
 Open an episode. Wait about a minute the first time. Then pick the language in the subtitle
 menu.
-
-> On Android there is no "Add addon" button — paste the address into the search field
-> itself and the addon appears. Installing in the desktop app with the same account syncs
-> it to your phone and TV.
 
 **Stuck?** [`GUIDE.md`](GUIDE.md) is a step-by-step guide. It covers common problems and
 how to run the addon on your own computer.
