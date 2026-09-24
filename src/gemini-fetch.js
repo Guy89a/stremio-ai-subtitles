@@ -87,6 +87,7 @@ function install(opts = {}) {
     if (!order.length) order = all;
 
     let last = null;
+    let lastModel = first;
     for (let t = 0; t < order.length; t++) {
       const target = withModel(u, order[t]);
       for (let a = 0; a < TRIES; a++) {
@@ -114,6 +115,7 @@ function install(opts = {}) {
         }
 
         const txt = await res.clone().text().catch(() => '');
+        lastModel = order[t];
 
         if (outForTheDay(res.status, txt)) {
           resting.set(order[t], Date.now() + RESTING_MS);
@@ -163,7 +165,11 @@ function install(opts = {}) {
         log(`   switching to fallback model ${order[t + 1]}`);
       }
     }
-    return last;
+    // Say which model the final failure came from: the caller only knows the
+    // one it asked for, and would otherwise report Flash for a Flash-Lite error.
+    if (!last) return last;
+    const body = await last.clone().text().catch(() => '');
+    return new Response(body, { status: last.status, headers: { 'x-gemini-model': lastModel } });
   };
 
   global.fetch = wrapped;

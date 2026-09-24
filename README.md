@@ -25,7 +25,7 @@ the process stops. You never get subtitles that are out of sync.
 
 ## Install
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Guy89a/stremio-hebrew-subs)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Guy89a/stremio-ai-subtitles)
 
 Press the button. You need to fill in two fields:
 

@@ -276,6 +276,26 @@ async function main() {
     console.log('✓ nicknames made of ordinary words are translated; real places keep their names');
   }
 
+  // ---- a member of a group takes the group's term ----------------------
+  // Same episode, one run to the next: Mason came out as בונים חופשיים, then as
+  // בנאי ("builder"). Flash-Lite follows examples, so the rule carries one.
+  {
+    const { glossaryPrompt } = require('../src/names');
+    const g = glossaryPrompt([{ name: 'Mason', count: 3, sample: "Welcome to our Mason's lodge." }], langs.get('heb'));
+    assert.ok(/MEMBER of a group/.test(g) && /Freemason/.test(g) && /בונה חופשי/.test(g) && /not a builder/.test(g),
+      'the glossary rule must spell out the Mason case');
+    console.log('✓ a member of a group takes the group\'s term (בונה חופשי, not בנאי)');
+  }
+
+  // ---- a shout gets the target language's own shout ---------------------
+  {
+    const { systemPrompt } = require('../src/translate');
+    const p = systemPrompt(langs.get('heb'));
+    assert.ok(/Hyah!/.test(p) && /דיו!/.test(p), 'the prompt must name the horse call and its Hebrew form');
+    assert.ok(/never a transliteration/.test(p), 'and forbid transliterating it');
+    console.log('✓ a shout is translated to what a native speaker shouts (דיו!, not היה!)');
+  }
+
   console.log('\nall name checks passed');
   process.exit(0);
 }

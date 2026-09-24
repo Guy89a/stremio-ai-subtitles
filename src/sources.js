@@ -77,7 +77,7 @@ async function fetchJson(url, ms = 15000) {
   try {
     const res = await fetch(url, {
       signal: ctl?.signal,
-      headers: { 'user-agent': 'stremio-hebrew-subs/1.0' },
+      headers: { 'user-agent': 'stremio-ai-subtitles/2.2' },
     });
     if (!res.ok) return null;
     return JSON.parse((await readCapped(res, MAX_JSON)).toString('utf8'));
@@ -160,7 +160,7 @@ async function fetchFollowing(url, signal, maxHops = 5) {
     const res = await fetch(next, {
       signal,
       redirect: 'manual',
-      headers: { 'user-agent': 'stremio-hebrew-subs/1.0', 'accept-encoding': 'identity' },
+      headers: { 'user-agent': 'stremio-ai-subtitles/2.2', 'accept-encoding': 'identity' },
     });
     if (res.status < 300 || res.status > 399 || !res.headers.get('location')) return res;
     next = assertSafeUrl(new URL(res.headers.get('location'), next).toString());

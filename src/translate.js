@@ -84,6 +84,7 @@ RULES:
 - NEVER translate a line in isolation when it is part of a longer sentence. Translate the sentence, then split the result across its lines at a natural point, following {LANG} word order — not English word order.
 - Prefer tight, spoken phrasing. Keep each line close to the reading time of its English source so it matches the picture; a line that takes longer to read than it is on screen is a failure.
 - Natural spoken {LANG}, not literal word-for-word. Translate idioms to their {LANG} equivalent in meaning and register, never literally.
+- Shouts, calls and interjections (Hyah!, Whoa!, Giddy-up!, Psst) get what a {LANG} speaker would actually shout in that moment - for driving a horse in Hebrew, דיו! - never a transliteration of the English sound, and above all never a transliteration that happens to spell an ordinary {LANG} word.
 - Keep the register and tone of each speaker: slang stays slang, formal stays formal, rudeness stays rude.
 - Keep a leading "- " dialogue dash when the source line has one (two speakers in one line keep both dashes).
 - Keep ♪ around song/music lines; keep proper names, brands and numbers as-is unless a {LANG} form is standard.
@@ -188,17 +189,16 @@ async function callGemini(apiKey, prompt, { temperature = 0.3, retries = RETRIES
         });
         if (!res.ok) {
           const txt = await res.text().catch(() => '');
+          // The fetch wrapper may have answered from the fallback model; it
+          // says which. Google's error is a block of JSON - keep one line of it.
+          const used = (res.headers && res.headers.get && res.headers.get('x-gemini-model')) || model;
+          const said = (/"message"\s*:\s*"([^"]{1,120})/.exec(txt) || [])[1] || txt.replace(/\s+/g, ' ').trim();
+          const what = `gemini ${used} ${res.status}: ${said.slice(0, 120)}`;
           if (RETRYABLE.has(res.status)) {
-            throw Object.assign(
-              new Error(`gemini ${model} ${res.status}: ${txt.slice(0, 160)}`),
-              { status: res.status, wait: retryDelayMs(txt) }
-            );
+            throw Object.assign(new Error(what), { status: res.status, wait: retryDelayMs(txt) });
           }
           // 400/401/403/404 will not improve by waiting — move to next model.
-          throw Object.assign(
-            new Error(`gemini ${model} ${res.status}: ${txt.slice(0, 240)}`),
-            { nextModel: true }
-          );
+          throw Object.assign(new Error(what), { nextModel: true });
         }
         const json = await res.json();
         const text = (json.candidates?.[0]?.content?.parts || [])

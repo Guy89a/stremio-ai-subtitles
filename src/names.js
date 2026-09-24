@@ -169,6 +169,7 @@ RULES:
 - NEVER mix the two: do not translate "the" and transliterate the rest (הקיד, הד קיד, el Kid). Either the whole epithet is translated, or the whole name stays as it is.
 - Where a well-known person, place, or work already has a standard form in ${lang.name}, use the standard form rather than inventing one.
 - A nickname, company, gang or institution that is called by ordinary words - "the House", "the Company", "the Butcher Shop", "the Regulators" - is TRANSLATED by meaning, the way a human subtitler would, never transliterated. Give the plain form; the translator adds articles and prefixes as the grammar of each sentence needs.
+- A capitalised word for a MEMBER of a group or institution takes that group's established term, read from the sample line - never the everyday meaning of the word: a Mason who joins a lodge is a Freemason (Hebrew: בונה חופשי), not a builder; a Regulator in a western is one of the Regulators, a Ranger one of the Rangers.
 - A real place (a town, county, river, country) keeps its name, transliterated, even when its English words have a meaning: White Oaks stays White Oaks in ${lang.name} letters. Only ordinary words attached to it are translated: "Lincoln County" gives the ${lang.name} word for county plus Lincoln.
 - Otherwise transliterate by sound, in the ${lang.name} writing system.
 - Titles such as Doctor, Detective or Mrs. ARE translated; the name after them is not.

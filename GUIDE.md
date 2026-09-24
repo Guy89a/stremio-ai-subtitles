@@ -35,12 +35,12 @@ The key looks like `AQ.xxxxx…` or `AIzaSy…`. Both are valid.
 
 Press this button:
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Guy89a/stremio-hebrew-subs)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Guy89a/stremio-ai-subtitles)
 
 If the button does not work, the full address is:
 
 ```
-https://render.com/deploy?repo=https://github.com/Guy89a/stremio-hebrew-subs
+https://render.com/deploy?repo=https://github.com/Guy89a/stremio-ai-subtitles
 ```
 
 If you do not have a Render account you will be asked to sign up. It is free and takes a

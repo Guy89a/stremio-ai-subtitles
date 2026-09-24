@@ -140,6 +140,34 @@ async function main() {
     console.log('✓ with no fallback, an overload is still waited out in full');
   }
 
+  // ---- 10. a failure says which model it came from, in one line ---------
+  // The log used to blame Flash, in a block of raw JSON, for a 503 that
+  // Flash-Lite had returned.
+  {
+    const BUSY = () => new Response(JSON.stringify({ error: { code: 503,
+      message: 'This model is currently experiencing high demand.', status: 'UNAVAILABLE' } }, null, 2), { status: 503 });
+    fresh(() => BUSY());
+    const res = await global.fetch(URL_FLASH, BODY);
+    assert.strictEqual(res.status, 503);
+    assert.strictEqual(res.headers.get('x-gemini-model'), 'gemini-flash-lite-latest',
+      'the failure must name the model that actually failed');
+
+    process.env.GEMINI_RETRIES = '2'; // one retry, so one "waiting" line is logged
+    process.env.NAME_GLOSSARY = '0';
+    delete require.cache[require.resolve('../src/translate')];
+    const { translateCues } = require('../src/translate');
+    const logs = [];
+    const cues = [{ start: 0, end: 1000, lines: ['Hello there, how are you doing today?'] }];
+    await translateCues(cues, 'k', (m) => logs.push(m), null, null, 'heb').catch(() => {});
+    delete process.env.GEMINI_RETRIES;
+    delete process.env.NAME_GLOSSARY;
+    const fail = logs.find((m) => /503/.test(m)) || '';
+    assert.ok(/gemini-flash-lite-latest 503: This model is currently experiencing high demand/.test(fail),
+      `the log line must be short and name Flash-Lite, got: ${fail}`);
+    assert.ok(!/[{}\n]/.test(fail), 'no raw JSON in the log');
+    console.log('✓ a failure is logged in one line, naming the model that actually failed');
+  }
+
   console.log('\nall model checks passed');
   process.exit(0);
 }
