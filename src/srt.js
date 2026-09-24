@@ -280,10 +280,28 @@ const PDF = '‬'; // end it
 // character at the end of an LTR paragraph and gets pushed to the wrong side -
 // it shows up at the start of the Hebrew sentence. Wrapping the line in an
 // explicit RTL run settles the direction regardless of what the player assumes.
+const BIDI_MARKS = /[‪-‮⁦-⁩]/g;
+
+/**
+ * Settle a line's direction explicitly.
+ *
+ * Only a right-to-left language needs this, and only on a line that actually
+ * contains that language's letters - wrapping a line of pure Latin would be
+ * wrong. `lang` is a row from languages.js.
+ */
+function markDirection(line, lang) {
+  if (!line || !lang || !lang.rtl) return line;
+  const langs = require('./languages');
+  const own = new RegExp(`[${langs.scriptRangeOf(lang.code)}]`);
+  if (!own.test(line)) return line;
+  return RLE + line.replace(BIDI_MARKS, '') + PDF;
+}
+
+// Hebrew was the first target and the tests are written against it; this is
+// the same call with Hebrew already filled in.
 function rtl(line) {
-  if (!line || !/[֐-׿]/.test(line)) return line; // nothing Hebrew here
-  const bare = line.replace(/[‪-‮⁦-⁩]/g, '');
-  return RLE + bare + PDF;
+  if (!line || !/[\u0590-\u05FF]/.test(line)) return line;
+  return RLE + line.replace(BIDI_MARKS, '') + PDF;
 }
 
 // Arabic, Persian and Arabic presentation forms. Gemini sometimes slips a
@@ -294,7 +312,17 @@ function hasForeignScript(s) {
   return FOREIGN.test(String(s || ''));
 }
 
+/**
+ * The same check for any target language: letters from a non-Latin script
+ * that is not this language's own. Latin is always allowed, because names and
+ * brands keep their spelling everywhere.
+ */
+function hasForeignScriptFor(s, code) {
+  return require('./languages').foreignScriptRe(code).test(String(s || ''));
+}
+
 module.exports = {
   parse, serialize, tcToMs, msToTc, isNonVerbal, cueToSource, wrap,
-  rtl, hasForeignScript, alignByTime, mergeOrphans, splitSdh, sdhScore, RLE, PDF,
+  rtl, markDirection, hasForeignScript, hasForeignScriptFor,
+  alignByTime, mergeOrphans, splitSdh, sdhScore, RLE, PDF,
 };

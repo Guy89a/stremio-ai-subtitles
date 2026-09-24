@@ -54,10 +54,11 @@ try {
 }
 $usable = $ml.models | Where-Object { $_.supportedGenerationMethods -contains 'generateContent' } |
           ForEach-Object { $_.name -replace '^models/', '' }
-# Prefer the cheap, high-quota "flash-lite" family; these have the most
-# generous free limits and are plenty for subtitle translation.
+# Prefer Flash: it chooses words better. Flash-Lite goes second, as the
+# fallback for when Flash's smaller free daily quota runs out.
 $rank = @(
-  ($usable | Where-Object { $_ -like '*flash-lite*' -and $_ -like '*latest*' }),
+  ($usable | Where-Object { $_ -eq 'gemini-flash-latest' }),
+  ($usable | Where-Object { $_ -eq 'gemini-flash-lite-latest' }),
   ($usable | Where-Object { $_ -like '*flash-lite*' -and $_ -notlike '*preview*' -and $_ -notlike '*image*' }),
   ($usable | Where-Object { $_ -like '*flash*' -and $_ -notlike '*preview*' -and $_ -notlike '*image*' -and $_ -notlike '*tts*' })
 ) | ForEach-Object { $_ } | Where-Object { $_ } | Select-Object -Unique

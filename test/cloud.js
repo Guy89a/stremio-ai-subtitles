@@ -1,5 +1,9 @@
 'use strict';
 
+// The names pass adds one request per episode; it has its own suite
+// (test/names.js). Off here so these checks stay about their own subject.
+process.env.NAME_GLOSSARY = '0';
+
 // Stub addons run on 127.0.0.1; the server refuses private addresses otherwise.
 process.env.ALLOW_PRIVATE_SOURCES = '1';
 
@@ -111,7 +115,7 @@ async function main() {
   const srtRes = await realFetch(subUrl);
   const body = await srtRes.text();
   assert.ok(srtRes.ok, `.srt endpoint returned ${srtRes.status}`);
-  assert.ok(/[֐-׿]/.test(body), 'served file should contain Hebrew');
+  assert.ok(/[\u0590-\u05FF]/.test(body), 'served file should contain Hebrew');
   assert.ok(body.includes('00:00:01,000 --> 00:00:03,000'), 'original timings preserved');
   assert.strictEqual(geminiSawKey, KEY, 'the server must have used the real key when calling Google');
   console.log('✓ end to end: sealed link translates and keeps the timings');

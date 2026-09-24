@@ -1,5 +1,9 @@
 'use strict';
 
+// The names pass adds one request per episode; it has its own suite
+// (test/names.js). Off here so these checks stay about their own subject.
+process.env.NAME_GLOSSARY = '0';
+
 // Stub addons run on 127.0.0.1; the server refuses private addresses otherwise.
 process.env.ALLOW_PRIVATE_SOURCES = '1';
 
@@ -78,12 +82,45 @@ async function main() {
 
   const joined = out.map((c) => c.lines.join(' ')).join('\n');
   assert.ok(!srt.hasForeignScript(joined), 'NO Arabic may survive into the finished subtitles');
-  assert.ok(/[֐-׿]/.test(out[1].lines.join('')), 'line 2 must still end up translated');
+  assert.ok(/[\u0590-\u05FF]/.test(out[1].lines.join('')), 'line 2 must still end up translated');
   console.log('✓ a line that came back with Arabic is re-asked and lands clean');
 
   assert.ok(prompts.length >= 2, 'a retry should have been issued');
   assert.ok(/Arabic/i.test(prompts[prompts.length - 1]), 'the retry must say what went wrong');
   console.log('✓ the retry explicitly tells the model what it got wrong');
+
+  // ---- 3b. the retry's answer is checked too ------------------------------
+  // From a real episode: the first answer had Arabic in "אחריך", the retry
+  // came back with the same slip, and it was accepted unchecked.
+  {
+    const attempt = async (dirtyUpTo) => {
+      let calls = 0;
+      global.fetch = async (url, opts) => {
+        calls++;
+        const prompt = JSON.parse(opts.body).contents[0].parts[0].text;
+        const nums = [...prompt.split('TRANSLATE')[1].split('CONTEXT AFTER')[0].matchAll(/^(\d+)\|/gm)]
+          .map((m) => Number(m[1]));
+        const reply = nums.map((n) => ({
+          n,
+          he: n === 2 && calls <= dirtyUpTo ? 'אתה יודע שהוא דולק אחريك, נכון?' : 'שורה ' + n + ' בעברית.',
+        }));
+        return { ok: true, status: 200,
+          json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(reply) }] } }] }) };
+      };
+      const o = await translateCues(cues, 'k', () => {});
+      return { calls, line2: o[1].lines.join(' ') };
+    };
+
+    const twice = await attempt(2);
+    assert.strictEqual(twice.calls, 3, 'a retry that slips again earns one more try');
+    assert.ok(!srt.hasForeignScript(twice.line2), 'the clean third answer must win');
+    console.log('✓ a retry that slips again is caught and asked a third time');
+
+    const always = await attempt(99);
+    assert.strictEqual(always.calls, 3, 'and no more than that');
+    assert.ok(/[\u0590-\u05FF]/.test(always.line2), 'if every try slips, a Hebrew line still beats English');
+    console.log('✓ it gives up after three tries and keeps the Hebrew rather than the English');
+  }
 
   // ---- 4. the finished file still parses -------------------------------
   const file = srt.serialize(out);

@@ -1,5 +1,9 @@
 'use strict';
 
+// The names pass adds one request per episode; it has its own suite
+// (test/names.js). Off here so these checks stay about their own subject.
+process.env.NAME_GLOSSARY = '0';
+
 // Every check here corresponds to a hole that was open in 1.4.0 and was
 // confirmed by running an exploit against it. They exist so the fixes cannot
 // be quietly undone later.
@@ -171,7 +175,7 @@ async function main() {
   // 6c. the link the server issued does work
   const good = await realFetch(subs.subtitles[0].url);
   assert.strictEqual(good.status, 200, 'the issued link must still work');
-  assert.ok(/[֐-׿]/.test(await good.text()), 'and must return Hebrew');
+  assert.ok(/[\u0590-\u05FF]/.test(await good.text()), 'and must return Hebrew');
   console.log('✓ the link the server issued itself still works end to end');
 
   // 6d. no HTML injection from a forwarded host header

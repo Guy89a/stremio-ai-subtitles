@@ -4,6 +4,7 @@
 // Standalone use:  node src/cli.js input.srt [output.he.srt]
 // Handy for testing the translation quality without touching Stremio.
 
+require('./gemini-fetch').install();
 const fs = require('fs');
 const path = require('path');
 const srt = require('./srt');
