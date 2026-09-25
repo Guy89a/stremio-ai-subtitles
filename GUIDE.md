@@ -145,25 +145,27 @@ takes 30 to 60 seconds. You can avoid that by calling the address every few minu
 Sign up at [cron-job.org](https://cron-job.org) → **Create cronjob**:
 
 - **URL:** `https://your-address.onrender.com/health`
-- **Schedule:** choose *Custom*, and in the minutes column select `0,10,20,30,40,50`.
-  That is one ping every 10 minutes.
-- **Hours:** select all of them **except 4 and 5**.
+- **Execution schedule:** choose **Every 10 minutes**.
 
-![The cron-job.org schedule: minutes 0, 10, 20…, all hours except 4 and 5, and the Crontab line](images/06-cron-schedule.png)
+![The cron-job.org schedule with Every 10 minutes selected and the Crontab line */10 * * * *](images/06-cron-schedule.png)
 
 The Crontab line at the bottom should read:
 
 ```
-*/10 0-3,6-23 * * *
+*/10 * * * *
 ```
 
-**Why not 24 hours a day.** The free plan gives 750 hours a month. A long month is 744
-hours, so the margin is only six hours. If you go over, the service stops until the next
-month. Skipping two hours at night brings it to about 680 hours. That is a safe margin and
-you will not notice the difference.
+**Why around the clock.** A night-time break sounds like a saving, but it does not work.
+Once the service has fallen asleep, the pings cannot wake it: Render answers them with an
+error until someone opens the address in a browser. After 25 failures in a row,
+cron-job.org switches the job off, and the server sleeps every day after that.
 
-Also check that the time zone in your cron-job.org account settings is your own, or the
-two skipped hours will land in the middle of the evening.
+**The monthly budget.** The free plan gives 750 hours a month per Render account. One
+service running all month uses at most 744, so it fits. **Keep this the only free service
+in the account.** A second one shares the same 750 hours, and both stop when they run out.
+
+In cron-job.org, turn on the notification for a disabled job (under *Notify me when…*).
+If the job is ever switched off, you get an email the same day.
 
 ---
 

@@ -193,11 +193,12 @@ Two settings change the time. Speaker names from an SDH track add about **8%**, 
 work on their own. `REFERENCE_LANG` adds about **a third**. Start without a reference track.
 Add one only if gender is still wrong too often.
 
-On Render's free plan the service sleeps after 15 minutes. You can keep it awake by calling
-`/health` every few minutes from a free cron service. But **do not do this 24 hours a day**.
-The free plan gives 750 hours a month, and a long month is 744 hours. If you go over, the
-service stops until the next month. `*/10 0-3,6-23 * * *` gives 22 hours a day, with room
-to spare.
+On Render's free plan the service sleeps after 15 minutes. Keep it awake by calling
+`/health` every 10 minutes, **around the clock** (`*/10 * * * *`), from a free cron service.
+Do not add a night-time break: once the service is asleep, the pings cannot wake it. One
+service running all month uses at most 744 of the 750 free hours, so keep it the only free
+service in the Render account. [`GUIDE.md`](GUIDE.md#step-5--keep-the-server-awake-optional)
+has the details.
 
 ---
 
